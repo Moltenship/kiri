@@ -558,7 +558,8 @@ pub struct Editor {
     selection: Option<R>,
     drag: Option<Drag>,
     editing: Option<TextEdit>,
-    ruler: Option<Axis>,
+    /// The ruler axes held down; both at once measure an element's width and height.
+    ruler: Vec<Axis>,
     space: bool,
     unit_px: bool,
     text_lines: Option<Rc<[R]>>,
@@ -694,7 +695,7 @@ impl Editor {
             selection: None,
             drag: None,
             editing: None,
-            ruler: None,
+            ruler: Vec::new(),
             space: false,
             unit_px: settings::get(cx).unit_px,
             text_lines: None,
@@ -1595,17 +1596,13 @@ impl Editor {
             cx.notify();
             return;
         }
-        if let Some(axis) = self.ruler {
-            if let Some((from, to)) = self.ruler_measure(axis) {
+        if !self.ruler.is_empty() {
+            let measures = self.ruler_measures();
+            if !measures.is_empty() {
                 self.edit_doc(|this| {
-                    this.add(
-                        Shape::Measure { from, to },
-                        Style {
-                            color: doc::MEASURE,
-                            size: 1.,
-                            variant: 0,
-                        },
-                    );
+                    for (from, to) in measures {
+                        this.add(Shape::Measure { from, to }, Style { color: doc::MEASURE, size: 1., variant: 0 });
+                    }
                 });
                 cx.notify();
             }
@@ -1945,8 +1942,8 @@ impl Editor {
         }
         match k.key.as_str() {
             "space" => self.space = true,
-            "1" if !e.is_held => self.ruler = Some(Axis::Vertical),
-            "2" if !e.is_held => self.ruler = Some(Axis::Horizontal),
+            "1" if !e.is_held => self.hold_ruler(Axis::Vertical),
+            "2" if !e.is_held => self.hold_ruler(Axis::Horizontal),
             "left" | "right" | "up" | "down" => {
                 let step = if m.shift { 10. } else { 1. } * self.scale;
                 let d = match k.key.as_str() {
@@ -1965,7 +1962,7 @@ impl Editor {
                     });
                 } else if !e.is_held {
                     // With nothing to nudge, an arrow measures along its axis, as in the alternative.
-                    self.ruler = Some(if d.1 == 0. { Axis::Horizontal } else { Axis::Vertical });
+                    self.hold_ruler(if d.1 == 0. { Axis::Horizontal } else { Axis::Vertical });
                 } else {
                     return;
                 }
@@ -1979,7 +1976,8 @@ impl Editor {
     fn key_up(&mut self, e: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         match e.keystroke.key.as_str() {
             "space" => self.space = false,
-            "1" | "2" | "left" | "right" | "up" | "down" => self.ruler = None,
+            "1" | "up" | "down" => self.ruler.retain(|a| *a != Axis::Vertical),
+            "2" | "left" | "right" => self.ruler.retain(|a| *a != Axis::Horizontal),
             _ => return,
         }
         cx.notify();
@@ -2213,6 +2211,16 @@ impl Editor {
     }
 
     /// Walks out from the cursor along `axis` until the color changes.
+    fn hold_ruler(&mut self, axis: Axis) {
+        if !self.ruler.contains(&axis) {
+            self.ruler.push(axis);
+        }
+    }
+
+    fn ruler_measures(&self) -> Vec<(P, P)> {
+        self.ruler.iter().filter_map(|&axis| self.ruler_measure(axis)).collect()
+    }
+
     fn ruler_measure(&self, axis: Axis) -> Option<(P, P)> {
         let p = self.cursor?;
         let (x, y) = (p.0.floor() as i64, p.1.floor() as i64);
@@ -2906,7 +2914,7 @@ impl Editor {
     }
 
     fn render_props(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        if self.selection.is_some() || self.ruler.is_some() {
+        if self.selection.is_some() || !self.ruler.is_empty() {
             return None;
         }
         let tool = self.styled_tool()?;
@@ -3030,7 +3038,7 @@ impl Editor {
         let guides = self.guides.clone();
         let editing = self.editing.as_ref().map(|e| (e.id, e.caret, e.selection(), e.marked.clone()));
         let input = self.editing.is_some().then(|| (cx.entity(), self.focus.clone()));
-        let ruler = self.ruler.and_then(|axis| self.ruler_measure(axis));
+        let ruler = self.ruler_measures();
         let theme = cx.theme();
         let (bg, frame) = (theme.muted, theme.border);
         // Drawn over arbitrary pixels, so it can't follow the app theme: dark lines around a
@@ -3237,7 +3245,7 @@ impl Editor {
                                     window.paint_quad(outline(view.rect(snap), accent, BorderStyle::Solid));
                                 }
                             }
-                            if let Some((from, to)) = ruler {
+                            for (from, to) in ruler {
                                 let m = Object {
                                     id: 0,
                                     shape: Shape::Measure { from, to },

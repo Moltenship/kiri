@@ -133,7 +133,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Magnifier: the drag boxes the source and a 3× lens hangs off it. Source and lens move and resize separately, and the zoom is their size ratio. Round or rounded-square, drawn as clean geometric shapes. Render from the original pixels.
 
 ### 12 Ruler
-- Hold `1` to measure vertically, `2` horizontally, or an arrow along its axis, as in the alternative.
+- Hold `1` to measure vertically, `2` horizontally, or an arrow along its axis, as in the alternative. Holding `1` and `2` together measures both, so an element's width and height show at once, and a click pins both.
 - Edge detection walks from the cursor until the color drifts slightly from the start pixel, so a faint divider or the first anti-aliased glyph pixel stops it, as in the alternative.
 - Live overlay while the key is held. A click pins the measurement as an annotation.
 - Units follow the px/pt toggle and the source display's scale.
