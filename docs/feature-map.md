@@ -53,7 +53,8 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - `Esc` cancels, releasing the mouse confirms. Decide what a click without a drag does (the alternative ignores it).
 - Repeat area remembers the last rectangle per display layout.
 - On macOS the selection behaves like the system grabber the alternative uses: `Space` while dragging moves it, `Shift` locks an axis, `Option` grows it from its center, and `Space` before dragging toggles window picking. Windows gets its own conventions later.
-- Ideas: arrow keys nudge the selection, snap to window or UI edges.
+- Arrow keys move the pointer by a point, before or during a drag, for an exact edge.
+- Idea: snap to window or UI edges.
 
 ### 02 Fullscreen and delayed capture
 - Fullscreen captures the display under the cursor. "All displays stitched" is an option.

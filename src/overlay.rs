@@ -4,7 +4,7 @@
 //! On macOS it behaves like the system grabber (⇧⌘4), which the alternative uses
 //! as is: Space while dragging moves the selection, Shift locks the axis the cursor
 //! moves least along, Option grows it from its center, and Space before dragging
-//! switches between area and window picking.
+//! switches between area and window picking. Arrow keys move the pointer by a point.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -28,6 +28,10 @@ pub enum Mode {
 
 const SPACE: u16 = 49;
 const TAB: u16 = 48;
+const LEFT: u16 = 123;
+const RIGHT: u16 = 124;
+const DOWN: u16 = 125;
+const UP: u16 = 126;
 
 #[derive(Default)]
 struct Session {
@@ -190,6 +194,33 @@ impl Overlay {
         true
     }
 
+    /// Arrow keys move the pointer a point at a time, before or during a drag, and repeat
+    /// while held. Repeat is timed here because the panel's own key repeat arrives doubled.
+    fn nudge(&mut self, code: u16, dx: f32, dy: f32, cx: &mut Context<Self>) {
+        if !self.press(code, cx) {
+            return;
+        }
+        self.step(dx, dy, cx);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(350)).await;
+            while mac::key_pressed(code) {
+                if this.update(cx, |this, cx| this.step(dx, dy, cx)).is_err() {
+                    return;
+                }
+                cx.background_executor().timer(Duration::from_millis(30)).await;
+            }
+        })
+        .detach();
+    }
+
+    fn step(&mut self, dx: f32, dy: f32, cx: &mut Context<Self>) {
+        let Some(c) = self.cursor else { return };
+        let (w, h) = (self.image.width as f32 / self.scale, self.image.height as f32 / self.scale);
+        let to = point(px((c.x.as_f32() + dx).clamp(0., w - 1.)), px((c.y.as_f32() + dy).clamp(0., h - 1.)));
+        mac::warp_cursor(self.origin.0 + to.x.as_f32(), self.origin.1 + to.y.as_f32());
+        self.track(to, cx);
+    }
+
     fn refresh(&mut self, cx: &mut Context<Self>) {
         match self.cursor {
             Some(c) => self.track(c, cx),
@@ -324,6 +355,10 @@ impl Render for Overlay {
                     this.skip += 1;
                     cx.notify();
                 }
+                "left" => this.nudge(LEFT, -1., 0., cx),
+                "right" => this.nudge(RIGHT, 1., 0., cx),
+                "up" => this.nudge(UP, 0., -1., cx),
+                "down" => this.nudge(DOWN, 0., 1., cx),
                 "space" if this.press(SPACE, cx) => {
                     if this.drag.is_none() && matches!(this.mode, Mode::Area | Mode::Window) {
                         this.picking = !this.picking;

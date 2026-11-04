@@ -21,7 +21,8 @@ use objc2_core_foundation::{
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGDataProvider, CGDirectDisplayID,
     CGDisplayBounds, CGEvent, CGEventSource, CGEventSourceStateID, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGMainDisplayID,
-    CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess, kCGColorSpaceSRGB,
+    CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess, CGAssociateMouseAndMouseCursorPosition,
+    CGWarpMouseCursorPosition, kCGColorSpaceSRGB,
 };
 use objc2_core_text::{
     CTFont, CTFontUIFontType, CTLine, kCTFontAttributeName,
@@ -109,6 +110,13 @@ pub fn make_overlay(window: &Window, display: CGDirectDisplayID) {
     ns_window.setHasShadow(false);
     ns_window.setFrame_display(frame, true);
     ns_window.makeKeyAndOrderFront(None);
+}
+
+/// Moves the pointer to global top-left points without posting an event. Re-associating
+/// skips the quarter second the system would otherwise ignore the mouse after a warp.
+pub fn warp_cursor(x: f32, y: f32) {
+    let _ = CGWarpMouseCursorPosition(CGPoint::new(x as f64, y as f64));
+    let _ = CGAssociateMouseAndMouseCursorPosition(true);
 }
 
 /// Whether a key (virtual key code) is held right now, whichever window has the keyboard.
