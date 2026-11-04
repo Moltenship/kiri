@@ -109,7 +109,7 @@ enum Command {
     CloseAllPins,
     StressTest,
     /// A capture asked for by `kiri --capture`, which any local process can run.
-    Automation(Capture),
+    Automation(Capture, Option<single::Then>),
     ToggleLaunchAtLogin,
     Menu(String),
     Quit,
@@ -205,6 +205,13 @@ fn main() {
         },
         None => None,
     };
+    let then = arg("--then").map(|list| {
+        single::Then::parse(&list).unwrap_or_else(|word| {
+            eprintln!("kiri: unknown --then {word:?}; a list of: {}", single::Then::WORDS.join(", "));
+            std::process::exit(2);
+        })
+    });
+    let capture = capture.map(|c| (c, then));
     if demo.is_none() && single::forward(open.as_deref().map(std::path::Path::new), capture) {
         return;
     }
@@ -234,8 +241,8 @@ fn main() {
         if let Some(demo) = demo {
             let _ = tx.unbounded_send(demo);
         }
-        if let Some(capture) = capture {
-            let _ = tx.unbounded_send(Command::Automation(capture));
+        if let Some((capture, then)) = capture {
+            let _ = tx.unbounded_send(Command::Automation(capture, then));
         }
         single::listen(tx.clone());
         let resident = install_resident(tx);
@@ -382,14 +389,21 @@ pub fn open_clipboard(cx: &mut App) {
 
 fn handle(command: Command, cx: &mut App) {
     match command {
-        Command::Capture(capture, at) => self::capture(capture, at, cx),
+        Command::Capture(capture, at) => {
+            cx.set_global(NextThen(None));
+            self::capture(capture, at, cx)
+        }
         // Kiri holds the screen recording permission, so another app must not get captures silently.
-        Command::Automation(capture) if settings::get(cx).automation => self::capture(capture, Instant::now(), cx),
-        Command::Automation(capture) => toast::with_action(
+        Command::Automation(capture, then) if settings::get(cx).automation => {
+            cx.set_global(NextThen(then));
+            self::capture(capture, Instant::now(), cx)
+        }
+        Command::Automation(capture, then) => toast::with_action(
             format!("An app asked for {}", capture.label().trim_end_matches('…')),
             "Allow",
             move |cx| {
                 settings::update(cx, |s| s.automation = true);
+                cx.set_global(NextThen(then));
                 self::capture(capture, Instant::now(), cx);
             },
             cx,
@@ -572,22 +586,34 @@ pub fn deliver_shot(shot: mac::Shot, cx: &mut App) {
     deliver(image, scale, display, cx);
 }
 
-/// Where every capture ends: the after-capture settings decide copy, save, and what opens.
-/// Encoding runs off the main thread; the editor opens at once, the thumbnail once the file exists.
+/// `--then` for the automated capture in progress. Any other capture clears it, so one
+/// that was cancelled can't leak into the next.
+#[derive(Default)]
+struct NextThen(Option<single::Then>);
+
+impl Global for NextThen {}
+
+/// Where every capture ends: the after-capture settings, or `--then`, decide copy, save, and
+/// what opens. Encoding runs off the main thread; the editor opens at once, the thumbnail once
+/// the file exists.
 pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App) {
     let s = settings::get(cx).clone();
-    let thumbnail = s.after_show && s.area_preview == settings::Preview::Thumbnail;
-    if s.after_show && !thumbnail {
+    let then = cx.default_global::<NextThen>().0.take().unwrap_or_else(|| {
+        let thumbnail = s.after_show && s.area_preview == settings::Preview::Thumbnail;
+        single::Then { edit: s.after_show && !thumbnail, thumbnail, copy: s.after_copy, save: s.after_save }
+    });
+    let thumbnail = then.thumbnail;
+    if then.edit {
         editor::open(image.clone(), scale, display, None, cx);
     }
-    if !(s.after_copy || s.after_save) {
+    if !(then.copy || then.save) {
         if thumbnail {
             preview::open(image, scale, display, None, cx);
         }
         return;
     }
-    let save_to = s.after_save.then(|| mac::timestamp_path(&s.save_dir()));
-    let (auto, copy) = (s.save_auto_jpeg, s.after_copy);
+    let save_to = then.save.then(|| mac::timestamp_path(&s.save_dir()));
+    let (auto, copy, edit) = (s.save_auto_jpeg, then.copy, then.edit);
     cx.spawn(async move |cx| {
         let shot = image.clone();
         let (png, temp, saved) = cx
@@ -605,7 +631,7 @@ pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App
             }
             if thumbnail {
                 preview::open(image, scale, display, saved, cx);
-            } else if let Some(path) = saved.filter(|_| !s.after_show) {
+            } else if let Some(path) = saved.filter(|_| !edit) {
                 toast::saved(path, cx);
             }
         });

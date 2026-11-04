@@ -42,4 +42,6 @@ Each tool has a letter: `V` select and crop, `A` arrow, `T` text, `R` rectangle,
 
 `kiri --capture <action>` runs a capture from a script, Shortcuts, or a launcher. The actions are `area`, `fullscreen`, `delayed`, `delayed-area`, `repeat-area`, `window`, `active-window`, `scrolling`, `scrolling-up`, `text`, `reopen`, and `settings`.
 
+Add `--then` to choose what happens after that one capture, instead of the after-capture settings: any of `edit`, `thumbnail`, `copy`, and `save`, separated by commas, as in `kiri --capture area --then copy,save`.
+
 Kiri can record your screen, so it won't take a capture for another app until you allow it. The first request shows an Allow button. Settings → Advanced → Automation turns it on or off.
