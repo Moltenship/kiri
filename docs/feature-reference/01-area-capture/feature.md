@@ -12,6 +12,11 @@ The main capture mode. The cursor turns into a crosshair and the user drags a re
 - The crosshair cursor shows the **live cursor position in points** next to it (`642 / 332`).
 - While dragging, the selection is drawn as a light overlay, and the label next to the cursor switches to the **selection size** (`439 / 229`).
 - Releasing the mouse finishes the capture. `Esc` cancels.
+- Modifiers while dragging (measured on `screencapture -i` with synthetic input):
+  - Holding `Space` moves the whole selection and keeps its size.
+  - `Shift` locks one axis: the axis the cursor moves less along after `Shift` goes down stays fixed. Releasing `Shift` lets it follow the cursor again.
+  - `Option` grows the selection symmetrically around its center at the moment `Option` was pressed. Pressing it doesn't make the selection jump.
+- `Space` before dragging switches to window picking, and pressing it again switches back.
 - The captured image keeps full Retina resolution. The editor reports size in points (`439×229pt`).
 - Needs macOS Screen Recording permission. On first use Shottr shows "Shottr needs permission to record the screen".
 - With "Default zoom level: Prefer 100%" on, an area capture opens the editor at 100% when it fits.

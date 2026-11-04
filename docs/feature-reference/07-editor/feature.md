@@ -24,16 +24,18 @@ Every drawn object is selected after creation and shows a **contextual property 
 - **File:** Copy Image ⇧⌘C, Save Image ⌘S, Save Image As ⇧⌘S, Pin to Screen ⌘P, Print ⇧⌘P, Open File ⇧⌘O, Open From Clipboard ⇧⌘V, Close ⌘W, Close All ⌥⌘W. Upload Image ⌘E is out of scope.
 - **Edit:** Undo ⌘Z, Redo ⇧⌘Z, **Reset Crop**, **Rasterize (Merge) Image** (flattens objects into pixels).
 - **Draw:** every tool, plus **Snap to Objects** and **Snap to Similar Objects**.
-- **Zoom:** Zoom In ⌘+, Zoom Out ⌘−, Zoom To Fit ⌘1, Zoom To 100% ⌘0, Zoom To Selection ⌘2, Selection Top Left / Bottom Right (jump the viewport to selection corners), Enter Full Screen.
+- **Zoom:** Zoom In ⌘+, Zoom Out ⌘−, Zoom To Fit ⌘1, Zoom To 100% ⌘0, Zoom To Selection ⌘2, Selection Top Left `Q` / Selection Bottom Right `W` (zoom to 1600% with that corner of the selection in the middle of the view, for placing it on an exact pixel), Enter Full Screen.
 
 ## Behavior
 
 - Annotations stay editable objects until saved or rasterized. Undo and redo cover both objects and pixel operations.
 - Drawing past the image edge grows the canvas, and the export includes it. See [canvas growth](../09-annotations/feature.md#canvas-grows-to-fit-annotations-observed).
-- Zoom goes up to at least 400% with crisp pixels at high zoom. The mouse wheel zooms, and Advanced has a reverse-direction option. `Q` and `W` zoom out and in, with no modifier.
+- Zoom goes up to at least 400% with crisp pixels at high zoom. The mouse wheel zooms, and Advanced has a reverse-direction option. The menu lists `Q` and `W` for the selection corners, but synthetic `Q`/`W` presses did nothing in a test, with or without a selection, at 100% and 400%; the menu items worked.
 - Image size is shown in points by default. Clicking the size opens a popover:
   - **Show Size in Logical Points** toggle, also on `P`.
   - **Resize Image (can't be undone!)**: presets 25%, 33%, 50%, 1×, 2×, 4×, or a width × height in px, then **Resize**.
+  - A preset fills the px fields from the current pixel size (1× is selected on open; 50% of 1400×1000 gives 700×500). Typing one field updates the other at the same aspect ratio.
+  - Resize merges annotations into the pixels (they can no longer be selected), keeps the pixels-per-point (700×500 pt at 50% shows as 350×250 pt) and the zoom, and closes the popover.
 - The app opens PNG, JPEG, and GIF files only (document types), and images from the clipboard. Dropping an image file on the editor and `Ctrl`-dragging the image out to another app are in the binary (unverified).
 - Advanced: **Main window: Always on top**.
 - ⌘-clicking the logo starts a Snake easter egg (from the binary, unverified).
