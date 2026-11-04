@@ -26,6 +26,10 @@ The selection toolbar replaces the tool row:
 
 Copy and Save with an active selection probably export just the selection. Verify this before building.
 
+From the binary, not seen in the UI:
+- A **Cut Out** button exists in the selection toolbar's nib but doesn't show in 1.9.3 (the toolbar has the 7 buttons above). It may be a gated Vision subject cut-out.
+- `Option`+drag makes a selection that autoadjusts on release (unverified).
+
 ## Screenshots
 
 | Selection with size and "Hit Enter to crop" | Resize (grow) |

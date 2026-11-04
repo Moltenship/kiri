@@ -2,7 +2,7 @@
 
 **Tools:** Add Capture (⌘A), Paste Image (⌘V), from the More tools menu
 
-These features weren't run in this session. The description comes from Shottr's menus and in-app strings.
+Add Capture wasn't run. Paste Image was run once: the pasted overlay's property bar has a **transparency** button and a **GIF** button. The rest comes from Shottr's menus and in-app strings.
 
 ## Add Capture
 

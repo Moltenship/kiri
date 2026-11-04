@@ -11,6 +11,8 @@
 
 - Both are in the menu bar menu (Capture Screen in the main list, Delayed Screenshot (3s) under **more**). Only fullscreen has a hotkey by default.
 - With "Prefer 100%" on, a fullscreen capture opens the editor at 80% zoom.
+- Fullscreen captures one display. On macOS 14+ it goes through ScreenCaptureKit, not `screencapture`. From the binary, unverified.
+- `shottr://grab/delayed` is the deep link for the delayed variant.
 - Repeat Area Capture, Capture Active Window, Capture Any Window, Scrolling (Up), Open File, and Load From Clipboard are also under **more**.
 
 ## Screenshots

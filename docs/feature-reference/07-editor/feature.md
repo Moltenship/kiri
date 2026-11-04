@@ -30,12 +30,24 @@ Every drawn object is selected after creation and shows a **contextual property 
 
 - Annotations stay editable objects until saved or rasterized. Undo and redo cover both objects and pixel operations.
 - Drawing past the image edge grows the canvas, and the export includes it. See [canvas growth](../09-annotations/feature.md#canvas-grows-to-fit-annotations-observed).
-- Zoom goes up to at least 400% with crisp pixels at high zoom. The mouse wheel zooms, and Advanced has a reverse-direction option.
-- Image size is shown in points by default. Clicking it switches between PX and PT ("Click to switch PX/PT").
-- The app also opens PNG, JPEG, and GIF files (document types), and images from the clipboard.
-- Save format: **PNG** or **Auto (PNG/JPEG)** (JPEG for photo-like content). **Downscale to 1× when saving** for Retina shots. Shottr retries with fallbacks if a save fails.
-- The default folder is chosen in settings. Saving goes there without a dialog. Save As asks.
+- Zoom goes up to at least 400% with crisp pixels at high zoom. The mouse wheel zooms, and Advanced has a reverse-direction option. `Q` and `W` zoom out and in, with no modifier.
+- Image size is shown in points by default. Clicking the size opens a popover:
+  - **Show Size in Logical Points** toggle, also on `P`.
+  - **Resize Image (can't be undone!)**: presets 25%, 33%, 50%, 1×, 2×, 4×, or a width × height in px, then **Resize**.
+- The app opens PNG, JPEG, and GIF files only (document types), and images from the clipboard. Dropping an image file on the editor and `Ctrl`-dragging the image out to another app are in the binary (unverified).
 - Advanced: **Main window: Always on top**.
+- ⌘-clicking the logo starts a Snake easter egg (from the binary, unverified).
+
+## Saving
+
+- Save format: **PNG** or **Auto (PNG/JPEG)**. **Downscale to 1× when saving** for Retina shots. Shottr retries with fallbacks if a save fails.
+- The default folder is chosen in settings. Saving goes there without a dialog. If no folder is set, Save Image first opens a "Choose default folder" panel. Save As always asks.
+- File name: `SCR-20261104-mnyv`, i.e. `SCR-` + date + a short time code (Save As proposed this for a fresh capture; an opened file keeps its own name). In the binary it is a hidden `fileNameTemplate` setting with strftime-like macros, default `SCR-%Y%m%d-%t`.
+- From the binary, unverified:
+  - Auto encodes JPEG (quality 0.92, `.jpeg`) and keeps it only if it is smaller than the PNG. Images taller than about 65 534 px are always PNG.
+  - Saved files get the `kMDItemIsScreenCapture` attribute, like macOS screenshots.
+  - A second ⌘S on the same image overwrites the file it saved before.
+  - Copy puts PNG data on the clipboard, not a file.
 
 ## Screenshots
 
@@ -46,3 +58,7 @@ Every drawn object is selected after creation and shows a **contextual property 
 | More tools menu | Zoom 400% |
 |---|---|
 | ![](more-tools-menu.png) | ![](zoom-400.png) |
+
+Size popover (click the image size or press `P`):
+
+![](size-popover.png)

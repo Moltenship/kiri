@@ -54,8 +54,14 @@ Most sessions end with one keystroke: `Esc` copies the image and closes the edit
 
 ## Seen in the binary, not explored
 
-These strings show up in the Shottr binary, but the UI wasn't reached:
+These come from the Shottr binary and nib files. The UI wasn't reached, so treat them as unverified:
 
-- **Screenshot library.** It indexes the screenshots folder and lists saved shots ("Every time you save a screenshot with Shottr, it will appear here"). It can be turned on and off and has a size limit (`settings/library/enable|disable|limit`).
+- **Screenshot library.** A popover that lists the screenshots Shottr saved ("Pick a folder for your screenshots. Every time you save a screenshot with Shottr, it will appear here."). It searches by the text OCR found in each shot, has 4 layouts and a context menu per item. It is off by default ("Screenshot Library is disabled") and can only be turned on by URL (`settings/library/enable|disable|limit`, then `lib`, `lib/search`). It wasn't enabled here because it would index the screenshots on this machine.
 - **Cursor in screenshots.** auto / include / exclude (`settings/capturecursor/*`).
 - **Custom area grabber** (`settings/areacustomgrabber/`) and a manual scrolling-capture mode (`settings/scrolling/manual/*`).
+
+## Platform facts
+
+- Sandboxed, Developer ID signed, macOS 12 or later, English-only UI.
+- Area, window, scrolling, and repeat captures run the system `screencapture` tool, allowed by a sandbox exception. Fullscreen uses ScreenCaptureKit on macOS 14+ (from the binary).
+- OCR and scroll stitching use Apple Vision.

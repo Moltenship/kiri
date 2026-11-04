@@ -13,19 +13,20 @@ Vector objects drawn over the screenshot. Each one stays editable (move, resize,
   - The **size slider** sets stroke width or font size. The tapered track shows thin → thick.
   - **Style variants** depend on the tool (below).
 - Draw → **Snap to Objects** / **Snap to Similar Objects** aligns new objects to existing ones and matches sizes.
+- From the binary, unverified: `Option`-drag duplicates an object, ⌘C/⌘V copy and paste objects, holding ⌘ or `Shift` skips snapping, and `Shift` constrains angles and proportions.
 
 ## Tools
 
 | Tool | Key | Variants and notes |
 |---|---|---|
 | **Arrow** | A | 4 styles: outlined, filled bold (default), thin, double-headed. A middle handle bends the arrow into a curve. |
-| **Text** | T | Two styles: text on a solid color label (default) or plain text. Click to place and type in place. |
-| **Rectangle** | R | Outline, filled, hatched/pattern, solid. Square or rounded corners. |
+| **Text** | T | Two styles: text on a solid color label (default) or plain text. Click to place and type in place. The binary also has a "goofy" handwritten font (Noteworthy Bold) and a callout pointer (unverified). |
+| **Rectangle** | R | Outline, filled, hatched/pattern, solid. Square or rounded corners. In the binary the fills are hand-drawn, transparent, translucent, and opaque. Rectangle, oval, spotlight, and magnifier share one shape model, so a rectangle can turn into an oval. |
 | **Oval** | O | Same fill styles as the rectangle. |
-| **Line** | L | Plain line, with a style menu (…). |
+| **Line** | L | Plain line, with a style menu (…). Solid or dashed. ⌘-clicking an end cycles its cap (from the binary, unverified). |
 | **Freehand Drawing** | D | Pen. Three variants: **free stroke**, **rectangle**, **oval**. The oval variant reshapes the drawn stroke into a hand-drawn-looking ellipse. On a stroke that is already rectangular, the rectangle variant looks almost the same as the free one (verify). The variant can be switched after drawing, while the stroke is selected. |
-| **Highlighter** | H | Semi-transparent marker rectangle (yellow by default) that keeps the text under it readable. |
-| **Counter** | C | Click to drop numbered badges 1, 2, 3… The number goes up on each click. Good for step-by-step guides. |
+| **Highlighter** | H | Semi-transparent marker rectangle (yellow by default) that keeps the text under it readable. In the binary it is a freehand stroke with multiply blending and its own pastel palette: `#ADF6FF #C2EAFE #E6E6FF #FFDAEF #FFF68D #F2FE01 #D8FF55 #DDF5C6`. |
+| **Counter** | C | Click to drop numbered badges 1, 2, 3… The number goes up on each click. Good for step-by-step guides. Arrow keys change a badge's pointer angle (from the binary, unverified). |
 
 Magnifier and Spotlight are in [11](../11-spotlight-and-magnifier/feature.md), and Blur/Erase in [10](../10-blur-and-erase/feature.md).
 

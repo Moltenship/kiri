@@ -27,7 +27,7 @@ Settings → Hotkeys has one recorder per action, each clearable:
 | Area screenshot | ⇧⌘4 |
 | Repeat area screenshot | none |
 | Any window screenshot | none |
-| Active window screenshot | ⇧⌘2 |
+| Active window screenshot | ⇧⌘2 (probably user-set, see below) |
 | Scrolling screenshot | none |
 | Show Shottr | none |
 | Instant Text/QR Recognition | ⌃⌥⌘O |
@@ -38,7 +38,25 @@ The tab starts with "How to reassign default shortcuts": 1) open System Settings
 
 `shottr://` deep links are off by default (Advanced → **URL Scheme API: Enable deep links**). When an app calls one while it's off, Shottr asks: "Some app, perhaps on your behalf, tries to execute deep link shottr://… Do you want to enable deep links in Shottr?"
 
-Commands found in the binary: `grab/` with `fullscreen`, `area`, `repeat`, `window`, `window/active`, `scrolling`, `scrollingup`, `scrolling/reverse`, plus `ocr`, `load/clipboard`. There are also settings switches: `settings/scrolling/manual/enable|disable`, `settings/capturecursor/auto|include|exclude`, `settings/library/enable|disable|limit`, and `settings/areacustomgrabber/`. The exact paths need checking against Shottr's docs.
+Checked with deep links on:
+- `grab/area`, `grab/repeat`, `grab/window`, `grab/scrolling/reverse` work. The first three run the system `screencapture` (`-i`, `-i`, `-w`), scrolling runs `screencapture -i -s`.
+- An unknown command shows a toast "Shottr: command is not recognized. Unknown URL Scheme command: <path>". `grab/scrollingup` is one of them.
+
+From the binary, unverified:
+- Capture: `grab/fullscreen`, `grab/area`, `grab/repeat`, `grab/window`, `grab/window/active`, `grab/scrolling`, `grab/scrolling/reverse`, `grab/delayed`, `grab/append`, and `ocr`.
+- Load and show: `load/clipboard`, `load/file`, `show`, `lib`, `lib/search`, `uploads`.
+- Settings: `settings`, `settings/token`, `settings/license`, `settings/scrolling/manual/enable|disable`, `settings/capturecursor/auto|include|exclude`, `settings/library/enable|disable|limit`, `settings/areacustomgrabber/`.
+- A `then=` parameter chains actions after a capture: `copy`, `save`, `edit`, `pin`, and a hidden `thumbnail`.
+- Some commands need a token ("Shottr: no valid token provided"). Failures show "URL Scheme command failed:".
+
+## Other app behavior
+
+- The menu bar menu adds items only when they apply: Update the app, Manual Scrolling Capture, Manage Uploads, Purchase Shottr, Report a bug (from the binary).
+- The first ⌘Q asks "Red pill or blue pill?": quit for real, or just close the window and stay in the menu bar. The answer is remembered (from the binary, unverified).
+- The welcome splash has **Run at Startup** and **Setup Hotkeys** buttons.
+- The Hotkeys tab has a **Reassign Default** button next to the steps above.
+- Only Fullscreen, Area, and Instant Text/QR Recognition have defaults in the binary. ⇧⌘2 for the active window in this install is probably user-set.
+- Launch at login uses the system login item. Updates come from Shottr's own updater, not Sparkle.
 
 ## Screenshots
 

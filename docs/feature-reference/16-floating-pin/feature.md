@@ -17,7 +17,11 @@ Turns the screenshot into a borderless, always-on-top window. Use it as a refere
   - **Copy**
   - **Zoom %** label. Scrolling presumably zooms the pin.
 - The window is moved by dragging the image.
+- Right-click opens a context menu: **Edit**, **Copy**, **50%**, **100%**, **200%**, **Semi-transparent**, **Close** (plus the system's Ask Siri). Semi-transparent makes the pin see-through.
+- The binary has no click-through mode for pins (unverified).
 
 ## Screenshots
 
-![Pinned screenshot with hover toolbar](pin.png)
+| Hover toolbar | Context menu |
+|---|---|
+| ![](pin.png) | ![](pin-context-menu.png) |

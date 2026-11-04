@@ -1,12 +1,12 @@
 # Window capture
 
-**Shottr default hotkey:** ⇧⌘2 (active window); Any Window has no default hotkey
+**Shottr hotkey:** ⇧⌘2 for the active window in this install, probably user-set (the binary has no default for it); Any Window has none
 
 ## What it does
 
 Captures a single window cleanly, without the content behind it, optionally with its shadow and a chosen background.
 
-- **Capture Any Window:** an overlay highlights the window under the cursor (blue tint) and the cursor turns into a camera. Click to capture.
+- **Capture Any Window:** an overlay highlights the window under the cursor (blue tint) and the cursor turns into a camera. Click to capture. This picker is macOS's own: Shottr runs `screencapture -x -w <tmp>/SCR-….png` (checked in the process list).
 - **Capture Active Window:** captures the frontmost window immediately, with no overlay.
 
 ## Shottr behavior (observed)
@@ -16,8 +16,8 @@ Captures a single window cleanly, without the content behind it, optionally with
 - Settings → General → **Window Screenshot Background** controls how the area around the window is filled:
   - **Wallpaper:** the desktop picture behind the window.
   - **Transparent:** alpha background, shadow kept (default in this install).
-  - **Solid Color**
-  - **Trim shadow:** no shadow, window bounds only.
+  - **Solid Color:** with a hex field for the color (from the binary, unverified).
+  - **Trim shadow:** no shadow, window bounds only. The binary adds `-o` to `screencapture` for this (unverified).
 - That setting applies to Active Window and Any Window captures only, never to area or fullscreen.
 
 ## Screenshots
