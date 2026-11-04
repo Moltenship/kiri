@@ -597,6 +597,14 @@ fn measure(text: &str, size: f32, bold: bool) -> f32 {
     mac::text_width(text, size, bold)
 }
 
+/// Moves the selection by `d`, kept inside the canvas. It can be larger than the canvas
+/// after an undo shrinks it, and then it stays pinned to the top-left.
+fn slide(r: R, d: P, c: R) -> R {
+    let x = (r.x + d.0).min(c.right() - r.w).max(c.x);
+    let y = (r.y + d.1).min(c.bottom() - r.h).max(c.y);
+    R::new(x, y, r.w, r.h)
+}
+
 /// Where offset `i` of a label sits: the x of the caret and the top of its line, in image space.
 fn label_point(o: &Object, text: &str, r: R, i: usize) -> P {
     let (pad_x, pad_y) = o.label_padding();
@@ -792,6 +800,8 @@ impl Editor {
         let refill = s.crop != self.crop || !s.image.same_pixels(&self.image);
         self.image = s.image;
         self.objects = s.objects;
+        // A reopened document brings its own ids; new objects must not reuse them.
+        self.next_id = self.next_id.max(self.objects.iter().map(|o| o.id + 1).max().unwrap_or(1));
         self.crop = s.crop;
         if refill {
             self.refresh_fill();
@@ -1809,10 +1819,7 @@ impl Editor {
                 if let Some(sel) = self.selection {
                     let next = match *grab {
                         SelGrab::Move => {
-                            let mut r = sel;
-                            r.x = (r.x + p.0 - last.0).clamp(canvas.x, canvas.right() - r.w);
-                            r.y = (r.y + p.1 - last.1).clamp(canvas.y, canvas.bottom() - r.h);
-                            r
+                            slide(sel, (p.0 - last.0, p.1 - last.1), canvas)
                         }
                         SelGrab::Handle(i) => resize_box(sel, i, (p.0 - off.0, p.1 - off.1)).intersect(&canvas).unwrap_or(sel),
                     };
@@ -1925,11 +1932,7 @@ impl Editor {
                     _ => (0., step),
                 };
                 if let Some(sel) = self.selection {
-                    let c = self.canvas();
-                    let mut r = sel;
-                    r.x = (r.x + d.0).clamp(c.x, c.right() - r.w);
-                    r.y = (r.y + d.1).clamp(c.y, c.bottom() - r.h);
-                    self.selection = Some(r);
+                    self.selection = Some(slide(sel, d, self.canvas()));
                 } else if let Some(id) = self.selected {
                     self.edit_doc(|this| {
                         if let Some(o) = this.object_mut(id) {

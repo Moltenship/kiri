@@ -225,11 +225,11 @@ pub fn background_color(image: &TiledImage, crop: PxRect) -> u32 {
 /// Shrinks `rect` to the content inside it: the edges move in while each row or
 /// column still matches the border's uniform color.
 pub fn autoadjust(image: &TiledImage, rect: PxRect) -> PxRect {
-    let bgra = image.read(rect);
+    // Reads pixels in place: the scan usually stops a few rows in, and the drag repeats it per move.
     let (w, h) = (rect.w as usize, rect.h as usize);
     let at = |x: usize, y: usize| -> [i32; 3] {
-        let i = (y * w + x) * 4;
-        [bgra[i] as i32, bgra[i + 1] as i32, bgra[i + 2] as i32]
+        let p = image.pixel(rect.x + x as u32, rect.y + y as u32).unwrap_or_default();
+        [p[0] as i32, p[1] as i32, p[2] as i32]
     };
     // Tight, as in the alternative: a white card on #F7F7F7 is an edge.
     let close = |a: [i32; 3], b: [i32; 3]| (0..3).all(|c| (a[c] - b[c]).abs() <= 4);

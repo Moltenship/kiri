@@ -545,30 +545,44 @@ pub fn deliver_shot(shot: mac::Shot, cx: &mut App) {
 }
 
 /// Where every capture ends: the after-capture settings decide copy, save, and what opens.
+/// Encoding runs off the main thread; the editor opens at once, the thumbnail once the file exists.
 pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App) {
     let s = settings::get(cx).clone();
-    let png = (s.after_copy || s.after_save)
-        .then(|| export::encode_bgra(image.width, image.height, image.read(image.full()), scale));
-    let mut saved = None;
-    if let Some(png) = &png {
-        if s.after_copy {
-            mac::copy_png(png, editor::write_temp(png).as_deref());
-        }
-        if s.after_save {
-            let path = s.save_dir().join(mac::timestamp_name());
-            saved = export::save_capture(&image, scale, png.clone(), path, s.save_auto_jpeg).ok();
-        }
+    let thumbnail = s.after_show && s.area_preview == settings::Preview::Thumbnail;
+    if s.after_show && !thumbnail {
+        editor::open(image.clone(), scale, display, None, cx);
     }
-    if s.after_show {
-        match s.area_preview {
-            settings::Preview::Editor => editor::open(image, scale, display, None, cx),
-            settings::Preview::Thumbnail => preview::open(image, scale, display, saved, cx),
+    if !(s.after_copy || s.after_save) {
+        if thumbnail {
+            preview::open(image, scale, display, None, cx);
         }
-    } else {
-        if let Some(path) = saved {
-            toast::saved(path, cx);
-        }
+        return;
     }
+    let save_to = s.after_save.then(|| s.save_dir().join(mac::timestamp_name()));
+    let (auto, copy) = (s.save_auto_jpeg, s.after_copy);
+    cx.spawn(async move |cx| {
+        let shot = image.clone();
+        let (png, temp, saved) = cx
+            .background_executor()
+            .spawn(async move {
+                let png = export::encode_bgra(shot.width, shot.height, shot.read(shot.full()), scale);
+                let temp = copy.then(|| editor::write_temp(&png)).flatten();
+                let saved = save_to.and_then(|path| export::save_capture(&shot, scale, png.clone(), path, auto).ok());
+                (png, temp, saved)
+            })
+            .await;
+        cx.update(|cx| {
+            if copy {
+                mac::copy_png(&png, temp.as_deref());
+            }
+            if thumbnail {
+                preview::open(image, scale, display, saved, cx);
+            } else if let Some(path) = saved.filter(|_| !s.after_show) {
+                toast::saved(path, cx);
+            }
+        });
+    })
+    .detach();
 }
 
 /// A tall synthetic page: gradient bands, a 100 px grid, and a ruler stripe.

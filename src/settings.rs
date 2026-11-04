@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use gpui_kit::{App, Global};
 use serde::{Deserialize, Serialize};
@@ -261,21 +262,46 @@ pub fn load(cx: &mut App) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     cx.set_global(Current(settings));
+    cx.on_app_quit(|cx| {
+        save(cx);
+        async {}
+    })
+    .detach();
 }
+
+/// Whether a write to disk is already scheduled.
+#[derive(Default)]
+struct Saving(bool);
+
+impl Global for Saving {}
 
 pub fn get(cx: &App) -> &Settings {
     &cx.global::<Current>().0
 }
 
+/// Changes settings now and writes them shortly after, so a slider drag writes the file once.
 pub fn update<R>(cx: &mut App, f: impl FnOnce(&mut Settings) -> R) -> R {
     let out = f(&mut cx.global_mut::<Current>().0);
+    if !std::mem::replace(&mut cx.default_global::<Saving>().0, true) {
+        cx.spawn(async |cx| {
+            cx.background_executor().timer(Duration::from_millis(250)).await;
+            cx.update(save);
+        })
+        .detach();
+    }
+    out
+}
+
+fn save(cx: &mut App) {
+    if !std::mem::take(&mut cx.default_global::<Saving>().0) {
+        return;
+    }
     let json = serde_json::to_string_pretty(&get(cx)).unwrap_or_default();
     let path = path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let _ = std::fs::write(path, json);
-    out
 }
 
 pub fn import(file: &std::path::Path, cx: &mut App) -> Result<(), String> {

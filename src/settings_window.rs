@@ -62,7 +62,7 @@ pub struct SettingsWindow {
     page: usize,
     search: Entity<InputState>,
     solid: Entity<ColorPickerState>,
-    _subscriptions: [Subscription; 3],
+    _subscriptions: [Subscription; 4],
 }
 
 impl SettingsWindow {
@@ -71,6 +71,10 @@ impl SettingsWindow {
         let color = settings::get(cx).window_background_color;
         let solid = cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(color)));
         let subscriptions = [
+            // Closing the window mid-recording skips the recorder's focus-out, which turns them back on.
+            cx.on_release(|_, cx| {
+                crate::reload_hotkeys(cx);
+            }),
             cx.observe_global::<settings::Current>(|_, cx| cx.notify()),
             cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()),
             cx.subscribe(&solid, |_, _, e: &ColorPickerEvent, cx| {

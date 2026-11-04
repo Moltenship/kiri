@@ -333,10 +333,24 @@ fn ct_line(text: &str, size: f32, bold: bool) -> Option<CFRetained<CTLine>> {
 }
 
 /// Width of one line in the system UI font, which is also what GPUI draws with.
+/// Labels are measured several times a frame, so widths are cached.
 pub fn text_width(text: &str, size: f32, bold: bool) -> f32 {
-    ct_line(text, size, bold).map_or(0., |line| unsafe {
-        line.typographic_bounds(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
-    } as f32)
+    thread_local! {
+        static WIDTHS: std::cell::RefCell<std::collections::HashMap<(String, u32, bool), f32>> = Default::default();
+    }
+    WIDTHS.with_borrow_mut(|cache| {
+        if let Some(&w) = cache.get(&(text.to_string(), size.to_bits(), bold)) {
+            return w;
+        }
+        if cache.len() > 4096 {
+            cache.clear();
+        }
+        let w = ct_line(text, size, bold).map_or(0., |line| unsafe {
+            line.typographic_bounds(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
+        } as f32);
+        cache.insert((text.to_string(), size.to_bits(), bold), w);
+        w
+    })
 }
 
 /// One line of text as premultiplied RGBA, laid out in a line box of

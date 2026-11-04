@@ -109,40 +109,14 @@ impl TiledImage {
     }
 
     pub fn pixel(&self, x: u32, y: u32) -> Option<[u8; 4]> {
-        (x < self.width && y < self.height).then(|| {
-            let px = self.read(PxRect { x, y, w: 1, h: 1 });
-            [px[0], px[1], px[2], px[3]]
-        })
-    }
-
-    /// Writes tightly packed BGRA into `rect` and rebuilds only the touched tiles.
-    /// Returns the replaced tiles so the caller can evict them from the GPU atlas.
-    pub fn write(&mut self, rect: PxRect, bgra: &[u8]) -> Vec<Arc<RenderImage>> {
-        let in_stride = (rect.w * 4) as usize;
-        let mut replaced = Vec::new();
-        for i in 0..self.tiles.len() {
-            let (col, row) = (i as u32 % self.cols, i as u32 / self.cols);
-            let tile_rect = tile_rect(self.width, self.height, col, row);
-            let Some(part) = rect.intersect(tile_rect) else {
-                continue;
-            };
-            let mut bytes = self.tiles[i]
-                .as_bytes(0)
-                .expect("tile has one frame")
-                .to_vec();
-            let tile_stride = (tile_rect.w * 4) as usize;
-            for y in 0..part.h {
-                let dst = ((part.y - tile_rect.y + y) as usize) * tile_stride
-                    + ((part.x - tile_rect.x) * 4) as usize;
-                let src =
-                    ((part.y - rect.y + y) as usize) * in_stride + ((part.x - rect.x) * 4) as usize;
-                let len = (part.w * 4) as usize;
-                bytes[dst..dst + len].copy_from_slice(&bgra[src..src + len]);
-            }
-            let fresh = Arc::new(frame_image(tile_rect.w, tile_rect.h, bytes));
-            replaced.push(std::mem::replace(&mut self.tiles[i], fresh));
+        if x >= self.width || y >= self.height {
+            return None;
         }
-        replaced
+        let (col, row) = (x / TILE, y / TILE);
+        let rect = tile_rect(self.width, self.height, col, row);
+        let bytes = self.tiles[(row * self.cols + col) as usize].as_bytes(0)?;
+        let i = (((y - rect.y) * rect.w + (x - rect.x)) * 4) as usize;
+        bytes.get(i..i + 4).map(|p| [p[0], p[1], p[2], p[3]])
     }
 }
 
