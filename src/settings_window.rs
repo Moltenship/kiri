@@ -574,6 +574,14 @@ fn advanced(cx: &App) -> Page {
                     row("Remove line breaks", toggle("join-lines", |s| s.ocr_join_lines, |s, v| s.ocr_join_lines = v, cx)),
                 ],
             ),
+            group(
+                "Automation",
+                [row(
+                    "Allow kiri --capture",
+                    toggle("automation", |s| s.automation, |s, v| s.automation = v, cx),
+                )
+                .description("Lets scripts, Shortcuts, and launchers run captures, as in kiri --capture area.")],
+            ),
             group("Settings file", [row("Your settings as JSON", file)]),
         ],
     }

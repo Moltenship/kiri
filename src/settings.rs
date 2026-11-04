@@ -41,6 +41,22 @@ impl Capture {
         Capture::Settings,
     ];
 
+    /// The name `kiri --capture` takes: the variant in kebab case, as `active-window`.
+    pub fn cli_name(self) -> String {
+        let mut name = String::new();
+        for (i, c) in format!("{self:?}").chars().enumerate() {
+            if c.is_uppercase() && i > 0 {
+                name.push('-');
+            }
+            name.push(c.to_ascii_lowercase());
+        }
+        name
+    }
+
+    pub fn from_cli(name: &str) -> Option<Capture> {
+        Capture::ALL.into_iter().find(|c| c.cli_name() == name)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Capture::Area => "Capture Area",
@@ -191,6 +207,8 @@ pub struct Settings {
     pub scroll_reverse: bool,
     /// The user scrolls; Kiri only watches and stitches.
     pub scroll_manual: bool,
+    /// `kiri --capture` may run captures; off, a request asks first.
+    pub automation: bool,
     pub hotkeys: BTreeMap<Capture, Option<String>>,
     pub styles: BTreeMap<Tool, Style>,
     pub backdrop: Option<crate::backdrop::Backdrop>,
@@ -223,6 +241,7 @@ impl Default for Settings {
             scroll_max_height: 20_000,
             scroll_reverse: false,
             scroll_manual: false,
+            automation: false,
             hotkeys: BTreeMap::new(),
             styles: BTreeMap::new(),
             backdrop: None,
@@ -355,4 +374,17 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     std::fs::write(&path, plist).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Capture;
+
+    #[test]
+    fn cli_names_are_kebab_case_and_round_trip() {
+        assert_eq!(Capture::ActiveWindow.cli_name(), "active-window");
+        for c in Capture::ALL {
+            assert_eq!(Capture::from_cli(&c.cli_name()), Some(c));
+        }
+    }
 }

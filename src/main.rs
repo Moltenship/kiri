@@ -108,6 +108,8 @@ enum Command {
     Paste,
     CloseAllPins,
     StressTest,
+    /// A capture asked for by `kiri --capture`, which any local process can run.
+    Automation(Capture),
     ToggleLaunchAtLogin,
     Menu(String),
     Quit,
@@ -192,7 +194,18 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let arg = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let (open, demo, thumbnail) = (arg("--open"), arg("--demo"), args.iter().any(|a| a == "--thumbnail"));
-    if demo.is_none() && single::forward(open.as_deref().map(std::path::Path::new)) {
+    let capture = match arg("--capture") {
+        Some(name) => match Capture::from_cli(&name) {
+            Some(c) => Some(c),
+            None => {
+                let names: Vec<String> = Capture::ALL.into_iter().map(Capture::cli_name).collect();
+                eprintln!("kiri: unknown capture {name:?}; one of: {}", names.join(", "));
+                std::process::exit(2);
+            }
+        },
+        None => None,
+    };
+    if demo.is_none() && single::forward(open.as_deref().map(std::path::Path::new), capture) {
         return;
     }
     gpui_kit::application().with_assets(KiriAssets).run(move |cx| {
@@ -220,6 +233,9 @@ fn main() {
         };
         if let Some(demo) = demo {
             let _ = tx.unbounded_send(demo);
+        }
+        if let Some(capture) = capture {
+            let _ = tx.unbounded_send(Command::Automation(capture));
         }
         single::listen(tx.clone());
         let resident = install_resident(tx);
@@ -367,6 +383,17 @@ pub fn open_clipboard(cx: &mut App) {
 fn handle(command: Command, cx: &mut App) {
     match command {
         Command::Capture(capture, at) => self::capture(capture, at, cx),
+        // Kiri holds the screen recording permission, so another app must not get captures silently.
+        Command::Automation(capture) if settings::get(cx).automation => self::capture(capture, Instant::now(), cx),
+        Command::Automation(capture) => toast::with_action(
+            format!("An app asked for {}", capture.label().trim_end_matches('…')),
+            "Allow",
+            move |cx| {
+                settings::update(cx, |s| s.automation = true);
+                self::capture(capture, Instant::now(), cx);
+            },
+            cx,
+        ),
         Command::Cancel => {
             overlay::close_all(cx);
             scrolling::stop(cx);

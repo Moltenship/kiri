@@ -19,15 +19,16 @@ fn socket() -> PathBuf {
     std::env::temp_dir().join(format!("kiri-{:x}.sock", h.finish()))
 }
 
-/// Sends `open` (a file to edit) or nothing (show Settings) to a running Kiri.
+/// Sends `open` (a file to edit), a capture, or nothing (show Settings) to a running Kiri.
 /// Returns false when none is running.
-pub fn forward(open: Option<&Path>) -> bool {
+pub fn forward(open: Option<&Path>, capture: Option<Capture>) -> bool {
     let Ok(mut stream) = UnixStream::connect(socket()) else {
         return false;
     };
-    let line = match open.and_then(|p| std::path::absolute(p).ok()) {
-        Some(path) => format!("open {}\n", path.display()),
-        None => "settings\n".into(),
+    let line = match (open.and_then(|p| std::path::absolute(p).ok()), capture) {
+        (Some(path), _) => format!("open {}\n", path.display()),
+        (None, Some(capture)) => format!("capture {}\n", capture.cli_name()),
+        (None, None) => "settings\n".into(),
     };
     stream.write_all(line.as_bytes()).is_ok()
 }
@@ -46,6 +47,10 @@ pub fn listen(tx: UnboundedSender<Command>) {
             }
             let command = match line.trim_end_matches('\n').split_once(' ') {
                 Some(("open", path)) => Command::Open(path.into(), false),
+                Some(("capture", name)) => match Capture::from_cli(name) {
+                    Some(capture) => Command::Automation(capture),
+                    None => continue,
+                },
                 _ => Command::Capture(Capture::Settings, std::time::Instant::now()),
             };
             let _ = tx.unbounded_send(command);

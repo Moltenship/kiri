@@ -170,7 +170,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - First-run guidance for freeing the system screenshot keys: ⇧⌘3/⇧⌘4 on macOS, `PrintScreen` on Windows ("Use Print Screen to open screen capture" must be off). Windows reserves `Win+Shift+S`.
 - Kiri defaults to ⇧⌘1/⇧⌘2 so it works before the system keys are freed. Settings → Hotkeys starts with how to free ⇧⌘3/⇧⌘4 and a button that moves Capture Screen and Capture Area there, like the alternative's Reassign Default.
 - One Kiri per user: launching it again opens Settings in the running one, or the file passed with `--open`, so there is never a second tray icon.
-- CLI and/or URL scheme for automation, off by default, with a confirmation prompt.
+- `kiri --capture <action>` (`area`, `fullscreen`, `active-window`, …) runs a capture in the running Kiri, for scripts, Shortcuts, and launchers. Kiri holds the screen recording permission, so this is off until Settings → Advanced → Automation allows it, and a request while off shows a toast with Allow, like the alternative's deep-link prompt. A URL scheme waits for the app bundle.
 - Launch at login, in Settings and as a checkmark in the tray menu, as in the alternative.
 - Reopen Last Screenshot (tray, optional hotkey) brings back the last closed editor with its annotations still editable, crop, and backdrop, but not its undo history. Where the alternative keeps its window hidden, Kiri keeps the image as a PNG in memory, so the resident app stays small.
 
