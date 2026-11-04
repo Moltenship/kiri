@@ -20,7 +20,7 @@ use objc2_core_foundation::{
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGDataProvider, CGDirectDisplayID,
-    CGDisplayBounds, CGEvent, CGEventSource, CGEventSourceStateID, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGMainDisplayID,
+    CGDisplayBounds, CGEvent, CGEventFlags, CGEventSource, CGEventSourceStateID, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGMainDisplayID,
     CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess, CGAssociateMouseAndMouseCursorPosition,
     CGWarpMouseCursorPosition, kCGColorSpaceSRGB,
 };
@@ -110,6 +110,10 @@ pub fn make_overlay(window: &Window, display: CGDirectDisplayID) {
     ns_window.setHasShadow(false);
     ns_window.setFrame_display(frame, true);
     ns_window.makeKeyAndOrderFront(None);
+}
+
+pub fn option_held() -> bool {
+    CGEventSource::flags_state(CGEventSourceStateID::CombinedSessionState).contains(CGEventFlags::MaskAlternate)
 }
 
 /// Moves the pointer to global top-left points without posting an event. Re-associating

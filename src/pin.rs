@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{Icon, Sizable, h_flex};
@@ -27,6 +28,7 @@ pub fn bind_keys(cx: &mut App) {
 struct Pins {
     next: u64,
     open: HashMap<u64, (AnyWindowHandle, Entity<Pin>)>,
+    watching_option: bool,
 }
 
 impl Global for Pins {}
@@ -73,7 +75,7 @@ pub fn open(image: TiledImage, scale: f32, origin: Point<Pixels>, doc: Option<cr
     cx.default_global::<Pins>().open.insert(id, (handle, pin));
 }
 
-/// Pins made click-through can't be clicked again, so the tray offers this way back.
+/// Click-through pins can only be reached with ⌥ held, so the tray offers this way back too.
 pub fn close_all(cx: &mut App) {
     let pins: Vec<_> = cx.default_global::<Pins>().open.drain().map(|(_, (h, _))| h).collect();
     for h in pins {
@@ -105,10 +107,13 @@ pub fn menu_event(id: &str, cx: &mut App) -> bool {
             mac::set_opacity(window, if pin.translucent { 0.5 } else { 1. });
         }
         "through" => {
-            pin.click_through = true;
-            pin.translucent = true;
-            mac::set_opacity(window, 0.5);
-            mac::set_ignores_mouse(window, true);
+            pin.click_through = !pin.click_through;
+            mac::set_ignores_mouse(window, pin.click_through);
+            if pin.click_through {
+                pin.translucent = true;
+                mac::set_opacity(window, 0.5);
+                watch_option(cx);
+            }
         }
         zoom => {
             if let Ok(z) = zoom.parse::<f32>() {
@@ -117,6 +122,40 @@ pub fn menu_event(id: &str, cx: &mut App) -> bool {
         }
     }));
     true
+}
+
+/// While ⌥ is held, click-through pins take the mouse again, to be moved or turned back.
+/// Modifier changes reach no window of a background app, so the state is polled.
+fn watch_option(cx: &mut App) {
+    if std::mem::replace(&mut cx.default_global::<Pins>().watching_option, true) {
+        return;
+    }
+    cx.spawn(async move |cx| {
+        let mut held = false;
+        loop {
+            cx.background_executor().timer(Duration::from_millis(80)).await;
+            let now = mac::option_held();
+            let done = cx.update(|cx| {
+                let pins: Vec<_> = cx.default_global::<Pins>().open.values().cloned().collect();
+                let through: Vec<_> = pins.into_iter().filter(|(_, p)| p.read(cx).click_through).collect();
+                if through.is_empty() {
+                    cx.default_global::<Pins>().watching_option = false;
+                    return true;
+                }
+                if now != held {
+                    for (h, _) in through {
+                        let _ = h.update(cx, |_, window, _| mac::set_ignores_mouse(window, !now));
+                    }
+                }
+                false
+            });
+            held = now;
+            if done {
+                return;
+            }
+        }
+    })
+    .detach();
 }
 
 pub struct Pin {
@@ -183,7 +222,7 @@ impl Pin {
             &zooms[2],
             &PredefinedMenuItem::separator(),
             &CheckMenuItem::with_id(id("translucent"), "Semi-transparent", true, self.translucent, None),
-            &MenuItem::with_id(id("through"), "Click-through", true, None),
+            &CheckMenuItem::with_id(id("through"), "Click-through (hold ⌥ to reach it)", true, self.click_through, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(id("close"), "Close", true, None),
         ]);

@@ -159,7 +159,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 
 ### 16 Floating pin
 - Always on top, borderless, with a shadow. Drag to move, scroll or pinch to scale.
-- Opacity and click-through, so a pin can be used as an overlay.
+- Opacity and click-through, so a pin can be used as an overlay. Holding ⌥ makes click-through pins take the mouse again, to move one or turn click-through off from its menu.
 - Several pins at once. Pins don't survive a restart unless that becomes a setting.
 - Decide whether pins float over full-screen apps on macOS and whether they show in Alt+Tab on Windows.
 
