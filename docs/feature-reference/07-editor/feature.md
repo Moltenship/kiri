@@ -30,7 +30,7 @@ Every drawn object is selected after creation and shows a **contextual property 
 
 - Annotations stay editable objects until saved or rasterized. Undo and redo cover both objects and pixel operations.
 - Drawing past the image edge grows the canvas, and the export includes it. See [canvas growth](../09-annotations/feature.md#canvas-grows-to-fit-annotations-observed).
-- Zoom goes up to at least 400% with crisp pixels at high zoom. The mouse wheel zooms, and Advanced has a reverse-direction option. The menu lists `Q` and `W` for the selection corners, but synthetic `Q`/`W` presses did nothing in a test, with or without a selection, at 100% and 400%; the menu items worked.
+- Zoom goes up to at least 400% with crisp pixels at high zoom. The mouse wheel zooms, and Advanced has a reverse-direction option. A trackpad pinch zooms too. The menu lists `Q` and `W` for the selection corners, but synthetic `Q`/`W` presses did nothing in a test, with or without a selection, at 100% and 400%; the menu items worked.
 - Image size is shown in points by default. Clicking the size opens a popover:
   - **Show Size in Logical Points** toggle, also on `P`.
   - **Resize Image (can't be undone!)**: presets 25%, 33%, 50%, 1×, 2×, 4×, or a width × height in px, then **Resize**.

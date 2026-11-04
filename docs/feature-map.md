@@ -89,7 +89,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 
 ### 07 Editor
 - Opens within ~150 ms after capture.
-- Pixels stay crisp when zoomed in.
+- Pixels stay crisp when zoomed in. The wheel, ⌘- or ⌃-scroll, and a trackpad pinch zoom around the pointer.
 - Same tools and single-letter shortcuts as the alternative.
 - Objects stay editable until export.
 - Copy puts both PNG and a file on the clipboard, so pasting works in chat apps and file managers. The drag handle produces a real file.

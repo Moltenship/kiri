@@ -3031,6 +3031,7 @@ impl Editor {
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
             .when(dragging.is_none(), |d| d.on_mouse_move(cx.listener(Self::mouse_move)))
             .on_scroll(cx.listener(Self::scroll))
+            .on_pinch(cx.listener(|this, e: &PinchEvent, _, cx| this.zoom_at(this.view().k * (1. + e.delta), e.position, cx)))
             .child(
                 canvas(
                     move |bounds, _, _| cell.set(bounds),
