@@ -1118,9 +1118,29 @@ impl Editor {
 
     fn copy(&mut self, cx: &mut Context<Self>) {
         self.finish_text();
-        let png = self.png(cx);
-        let file = write_temp(&png);
-        mac::copy_png(&png, file.as_deref());
+        let (pixmap, scale) = self.export_pixmap(&self.objects, cx);
+        copy_later(move || export::encode_png(&pixmap, scale), cx);
+    }
+
+    fn copy_and_save_close(&mut self, copy: bool, save: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.finish_text();
+        let pixmap = Arc::new(self.export_pixmap(&self.objects, cx));
+        if save {
+            let path = self.saved_to.clone().unwrap_or_else(|| mac::timestamp_path(&settings::get(cx).save_dir()));
+            let write = write_later(pixmap.clone(), path, cx);
+            cx.spawn(async move |_, cx| {
+                let result = write.await;
+                cx.update(|cx| match result {
+                    Ok(path) => crate::toast::saved(path, cx),
+                    Err(err) => crate::toast::show(format!("Couldn't save: {err}"), cx),
+                });
+            })
+            .detach();
+        }
+        if copy {
+            copy_later(move || export::encode_png(&pixmap.0, pixmap.1), cx);
+        }
+        window.remove_window();
     }
 
     /// As in the alternative, ⌘C closes the editor only when nothing is selected. A selected
@@ -1143,11 +1163,7 @@ impl Editor {
     }
 
     fn copy_and_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.finish_text();
-        let png = self.png(cx);
-        let file = write_temp(&png);
-        mac::copy_png(&png, file.as_deref());
-        window.remove_window();
+        self.copy_and_save_close(true, false, window, cx);
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
@@ -1178,27 +1194,30 @@ impl Editor {
         .detach();
     }
 
+    /// Writes in the background. `saved_to` is set at once so a quick second Save reuses the name.
     fn write_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
-        let (pixmap, scale) = self.export_pixmap(&self.objects, cx);
-        let (bytes, ext) = export::for_save(&pixmap, scale, settings::get(cx).save_auto_jpeg);
-        let path = path.with_extension(ext);
-        match std::fs::write(&path, bytes) {
-            Ok(()) => {
-                mac::mark_screenshot(&path);
-                let folder = path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                self.saved_to = Some(path.clone());
-                if settings::get(cx).confirmations {
-                    self.toast_done(format!("Saved to {folder}"), Some(ToastAction::Reveal(path)), cx);
+        self.saved_to = Some(path.clone());
+        let write = write_later(Arc::new(self.export_pixmap(&self.objects, cx)), path, cx);
+        cx.spawn(async move |this, cx| {
+            let result = write.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(path) => {
+                    let folder = path
+                        .parent()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    this.saved_to = Some(path.clone());
+                    if settings::get(cx).confirmations {
+                        this.toast_done(format!("Saved to {folder}"), Some(ToastAction::Reveal(path)), cx);
+                    }
                 }
-            }
-            Err(err) => self.show_toast(format!("Couldn't save: {err}"), None, cx),
-        }
+                Err(err) => this.show_toast(format!("Couldn't save: {err}"), None, cx),
+            });
+        })
+        .detach();
     }
+
 
     fn export_temp(&self, cx: &App) -> Option<PathBuf> {
         write_temp(&self.png(cx))
@@ -1983,14 +2002,7 @@ impl Editor {
         } else {
             let s = settings::get(cx);
             let (copy, save) = (s.esc_copies, s.esc_saves);
-            if save {
-                self.save(cx);
-            }
-            if copy {
-                self.copy_and_close(window, cx);
-            } else {
-                window.remove_window();
-            }
+            self.copy_and_save_close(copy, save, window, cx);
             return;
         }
         cx.notify();
@@ -2371,6 +2383,34 @@ fn straight(premultiplied: &[u8], alpha: f32) -> Vec<u8> {
             [(p[0] as f32 * k).min(255.) as u8, (p[1] as f32 * k).min(255.) as u8, (p[2] as f32 * k).min(255.) as u8, (a * alpha).round() as u8]
         })
         .collect()
+}
+
+/// Encodes off the main thread; Auto JPEG may change the extension.
+fn write_later(pixmap: Arc<(tiny_skia::Pixmap, f32)>, path: PathBuf, cx: &App) -> Task<Result<PathBuf, String>> {
+    let auto = settings::get(cx).save_auto_jpeg;
+    cx.background_spawn(async move {
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+        let (bytes, ext) = export::for_save(&pixmap.0, pixmap.1, auto);
+        let path = path.with_extension(ext);
+        std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+        mac::mark_screenshot(&path);
+        Ok(path)
+    })
+}
+
+/// Puts a PNG on the clipboard once `encode` finishes in the background, so the window
+/// that asked can close at once.
+pub fn copy_later(encode: impl FnOnce() -> Vec<u8> + Send + 'static, cx: &App) {
+    let png = cx.background_spawn(async move {
+        let png = encode();
+        let file = write_temp(&png);
+        (png, file)
+    });
+    cx.spawn(async move |_| {
+        let (png, file) = png.await;
+        mac::copy_png(&png, file.as_deref());
+    })
+    .detach();
 }
 
 pub fn write_temp(png: &[u8]) -> Option<PathBuf> {

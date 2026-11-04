@@ -129,8 +129,8 @@ impl Preview {
     }
 
     fn copy_and_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let png = self.png();
-        mac::copy_png(&png, crate::editor::write_temp(&png).as_deref());
+        let (image, scale) = (self.image.clone(), self.scale);
+        crate::editor::copy_later(move || export::encode_bgra(image.width, image.height, image.read(image.full()), scale), cx);
         self.close(window, cx);
     }
 
