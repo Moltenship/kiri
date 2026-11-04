@@ -193,10 +193,17 @@ fn rounded_coverage(x: f32, y: f32, w: f32, h: f32, r: f32) -> f32 {
 
 /// The most common color along the crop's border, which is almost always the
 /// app or page background. Returned as 0xRRGGBB.
-pub fn background_color(image: &TiledImage, crop: PxRect) -> u32 {
+/// `None` when the edge is mostly transparent, as around a window capture, so grown canvas stays clear.
+pub fn background_color(image: &TiledImage, crop: PxRect) -> Option<u32> {
     let mut counts = std::collections::HashMap::<u32, (u32, [u32; 3])>::new();
+    let (mut clear, mut total) = (0u32, 0u32);
     let mut add = |x: u32, y: u32| {
-        if let Some([b, g, r, _]) = image.pixel(x, y) {
+        if let Some([b, g, r, a]) = image.pixel(x, y) {
+            total += 1;
+            if a < 128 {
+                clear += 1;
+                return;
+            }
             let key = ((r as u32 >> 3) << 10) | ((g as u32 >> 3) << 5) | (b as u32 >> 3);
             let e = counts.entry(key).or_default();
             e.0 += 1;
@@ -215,11 +222,14 @@ pub fn background_color(image: &TiledImage, crop: PxRect) -> u32 {
         add(crop.x, y);
         add(x1, y);
     }
-    counts
+    if clear * 2 > total {
+        return None;
+    }
+    let fill = counts
         .values()
         .max_by_key(|(n, _)| *n)
-        .map(|(n, [r, g, b])| ((r / n) << 16) | ((g / n) << 8) | (b / n))
-        .unwrap_or(0xFFFFFF)
+        .map(|(n, [r, g, b])| ((r / n) << 16) | ((g / n) << 8) | (b / n));
+    Some(fill.unwrap_or(0xFFFFFF))
 }
 
 /// Shrinks `rect` to the content inside it: the edges move in while each row or
@@ -360,3 +370,19 @@ pub fn contrast_ratio(a: u32, b: u32) -> f32 {
     (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transparent_edges_have_no_background() {
+        let (w, h) = (8u32, 8u32);
+        let mut bgra = vec![0u8; (w * h * 4) as usize];
+        let clear = TiledImage::from_bgra(w, h, &bgra, w as usize * 4);
+        assert_eq!(background_color(&clear, clear.full()), None);
+        bgra.chunks_mut(4).for_each(|p| p.copy_from_slice(&[0x30, 0x20, 0x10, 0xFF]));
+        let opaque = TiledImage::from_bgra(w, h, &bgra, w as usize * 4);
+        assert_eq!(background_color(&opaque, opaque.full()), Some(0x102030));
+    }
+}

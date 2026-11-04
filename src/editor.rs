@@ -546,7 +546,8 @@ pub struct Editor {
     scale: f32,
     objects: Rc<Vec<Object>>,
     crop: Option<R>,
-    fill: u32,
+    /// Grown canvas fill; `None` keeps it transparent.
+    fill: Option<u32>,
     next_id: u64,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
@@ -1060,7 +1061,7 @@ impl Editor {
                 h: crop.h as u32,
             },
             canvas: area,
-            fill: Some(self.fill),
+            fill: self.fill,
             objects,
             cx: ctx,
         })
@@ -1093,7 +1094,7 @@ impl Editor {
         self.finish_text();
         let under: Vec<Object> = self.objects.iter().filter(|o| o.id != id).cloned().collect();
         let frames = [self.export_pixmap(&self.objects, cx).0, self.export_pixmap(&under, cx).0];
-        let path = settings::get(cx).save_dir().join(mac::timestamp_name()).with_extension("gif");
+        let path = mac::timestamp_path(&settings::get(cx).save_dir()).with_extension("gif");
         let write = cx.background_spawn({
             let path = path.clone();
             async move {
@@ -1153,7 +1154,7 @@ impl Editor {
         self.finish_text();
         let path = match &self.saved_to {
             Some(p) => p.clone(),
-            None => settings::get(cx).save_dir().join(mac::timestamp_name()),
+            None => mac::timestamp_path(&settings::get(cx).save_dir()),
         };
         self.write_file(path, cx);
     }
@@ -1164,7 +1165,11 @@ impl Editor {
             Some(f) => (f.parent().map(PathBuf::from).unwrap_or_default(), f.file_name().map(|n| n.to_string_lossy().into_owned())),
             None => (settings::get(cx).save_dir(), None),
         };
-        let rx = cx.prompt_for_new_path(&dir, Some(&name.unwrap_or_else(mac::timestamp_name)));
+        let name = name.unwrap_or_else(|| {
+            let path = mac::timestamp_path(&dir);
+            path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+        });
+        let rx = cx.prompt_for_new_path(&dir, Some(&name));
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(path))) = rx.await {
                 let _ = this.update(cx, |this, cx| this.write_file(path, cx));
@@ -2199,13 +2204,18 @@ impl Editor {
     fn ruler_measure(&self, axis: Axis) -> Option<(P, P)> {
         let p = self.cursor?;
         let (x, y) = (p.0.floor() as i64, p.1.floor() as i64);
+        // Pixels cropped away are hidden, so the edge walk stops at the crop.
+        let b = self.base().round_out();
+        let (x0, y0, x1, y1) = (b.x as i64, b.y as i64, b.right() as i64, b.bottom() as i64);
+        if x < x0 || y < y0 || x >= x1 || y >= y1 {
+            return None;
+        }
         let start = self.pixel_at((x as f32, y as f32))?;
-        let (w, h) = (self.image.width as i64, self.image.height as i64);
         let step = |dx: i64, dy: i64| -> i64 {
             let mut n = 0;
             loop {
                 let (nx, ny) = (x + dx * (n + 1), y + dy * (n + 1));
-                if nx < 0 || ny < 0 || nx >= w || ny >= h {
+                if nx < x0 || ny < y0 || nx >= x1 || ny >= y1 {
                     return n;
                 }
                 let Some(c) = self.pixel_at((nx as f32, ny as f32)) else {
@@ -2291,10 +2301,10 @@ impl Editor {
                         };
                         h.write(&[a.0, a.1, b.0, b.1, c.0, c.1].map(f32::to_bits).map(u32::to_le_bytes).concat());
                     }
-                    h.write(&[width.to_bits(), *color, self.fill].map(u32::to_le_bytes).concat());
+                    h.write(&[width.to_bits(), *color, self.fill.unwrap_or(u32::MAX)].map(u32::to_le_bytes).concat());
                     let fresh = Source::Highlight(h.finish());
                     if !cache.get(key).is_some_and(|c| c.key == fresh)
-                        && let Some(patch) = export::highlight_patch(&self.image, Some(self.fill), path, *width, *color, *rect)
+                        && let Some(patch) = export::highlight_patch(&self.image, self.fill, path, *width, *color, *rect)
                     {
                         let image = Arc::new(crate::tiled::frame_image(patch.w, patch.h, patch.bgra));
                         if let Some(old) = cache.insert(*key, CachedPatch { key: fresh, at: patch.at, image }) {
@@ -2366,7 +2376,7 @@ fn straight(premultiplied: &[u8], alpha: f32) -> Vec<u8> {
 pub fn write_temp(png: &[u8]) -> Option<PathBuf> {
     let dir = std::env::temp_dir().join("Kiri");
     std::fs::create_dir_all(&dir).ok()?;
-    let path = dir.join(mac::timestamp_name());
+    let path = mac::timestamp_path(&dir);
     std::fs::write(&path, png).ok()?;
     Some(path)
 }
@@ -3077,7 +3087,9 @@ impl Editor {
                             }
                             let canvas_b = view.rect(canvas_rect);
                             // Only grown canvas gets the fill, so transparent captures show the checkerboard.
-                            if !image_rect.contains_rect(&canvas_rect) {
+                            if let Some(bg_fill) = bg_fill
+                                && !image_rect.contains_rect(&canvas_rect)
+                            {
                                 window.paint_quad(fill_quad(canvas_b, paint::color(bg_fill, 1.), backdrop.as_ref().map_or(0., |b| b.inner_radius * view.k * scale)));
                             }
                             window.with_content_mask(Some(ContentMask { bounds: canvas_b }), |window| {

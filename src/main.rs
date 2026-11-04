@@ -227,6 +227,7 @@ fn main() {
         for keys in reload_hotkeys(cx) {
             eprintln!("kiri: couldn't register {keys}");
         }
+        refresh_tray(cx);
         ocr::warm_up(cx);
 
         cx.spawn(async move |cx| {
@@ -558,7 +559,7 @@ pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App
         }
         return;
     }
-    let save_to = s.after_save.then(|| s.save_dir().join(mac::timestamp_name()));
+    let save_to = s.after_save.then(|| mac::timestamp_path(&s.save_dir()));
     let (auto, copy) = (s.save_auto_jpeg, s.after_copy);
     cx.spawn(async move |cx| {
         let shot = image.clone();

@@ -138,7 +138,7 @@ impl Preview {
         let path = self
             .saved
             .clone()
-            .unwrap_or_else(|| settings::get(cx).save_dir().join(mac::timestamp_name()));
+            .unwrap_or_else(|| mac::timestamp_path(&settings::get(cx).save_dir()));
         match export::save_capture(&self.image, self.scale, self.png(), path, settings::get(cx).save_auto_jpeg) {
             Ok(path) => crate::toast::saved(path, cx),
             Err(err) => crate::toast::show(format!("Couldn't save: {err}"), cx),

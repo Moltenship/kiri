@@ -300,20 +300,25 @@ pub fn mark_screenshot(path: &std::path::Path) {
     unsafe { libc::setxattr(file.as_ptr(), name.as_ptr(), TRUE_PLIST.as_ptr().cast(), TRUE_PLIST.len(), 0, 0) };
 }
 
-/// `Kiri 2026-11-04 at 14.05.09.png`, the same shape macOS uses for screenshots.
-pub fn timestamp_name() -> String {
+/// `Kiri 2026-11-04 at 14.05.09.png` in `dir`, the same shape macOS uses for screenshots.
+/// A second capture in the same second gets ` 2`, so neither overwrites the other.
+pub fn timestamp_path(dir: &std::path::Path) -> PathBuf {
     let now = unsafe { libc::time(std::ptr::null_mut()) };
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&now, &mut tm) };
-    format!(
-        "Kiri {:04}-{:02}-{:02} at {:02}.{:02}.{:02}.png",
+    let stem = format!(
+        "Kiri {:04}-{:02}-{:02} at {:02}.{:02}.{:02}",
         tm.tm_year + 1900,
         tm.tm_mon + 1,
         tm.tm_mday,
         tm.tm_hour,
         tm.tm_min,
         tm.tm_sec
-    )
+    );
+    (1..)
+        .map(|n| dir.join(if n == 1 { format!("{stem}.png") } else { format!("{stem} {n}.png") }))
+        .find(|p| ["png", "jpg", "gif"].iter().all(|ext| !p.with_extension(ext).exists()))
+        .expect("an unused name")
 }
 
 fn ct_line(text: &str, size: f32, bold: bool) -> Option<CFRetained<CTLine>> {

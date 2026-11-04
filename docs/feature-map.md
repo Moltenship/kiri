@@ -118,7 +118,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Edges snap within 5 pt to the image (or crop) edges and to objects of the same kind, while drawing, moving, and resizing, with a pink guide. `⌘` or `Shift` draws free. Kiri has only this mode, the alternative's default; its "Snap to Objects" mode is left out.
 - Objects can be copied, pasted, duplicated with `Option`-drag, nudged, and deleted. ⌘C with a selected object copies the object and keeps the editor open; with nothing selected it copies the image and closes.
 - Canvas = bounds(crop ∪ objects) + padding, where the crop is the whole image until cropped, recomputed after every edit and part of undo. Grow live while dragging, for every tool (the alternative clips freehand until release). The view never moves or rescales as the canvas grows, and a drag keeps tracking outside the window.
-- Fill for the grown area: the crop's background color (default), transparent, or custom. Cropped-away pixels never show through. Cap the canvas size.
+- Fill for the grown area: the crop's background color (default), transparent, or custom. A mostly transparent edge, as around a window capture, keeps the grown area transparent, as in the alternative. Cropped-away pixels never show through. Cap the canvas size.
 - The editor can zoom out past fit, so there is room to draw outside the image. Backdrop wraps the grown canvas.
 
 ### 10 Blur and erase
