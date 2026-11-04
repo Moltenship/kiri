@@ -112,6 +112,12 @@ pub fn make_overlay(window: &Window, display: CGDirectDisplayID) {
     ns_window.makeKeyAndOrderFront(None);
 }
 
+pub fn make_key(window: &Window) {
+    if let Some(ns_window) = ns_view(window).and_then(|v| v.window()) {
+        ns_window.makeKeyWindow();
+    }
+}
+
 pub fn option_held() -> bool {
     CGEventSource::flags_state(CGEventSourceStateID::CombinedSessionState).contains(CGEventFlags::MaskAlternate)
 }
@@ -313,8 +319,10 @@ pub fn mark_screenshot(path: &std::path::Path) {
 }
 
 /// `Kiri 2026-11-04 at 14.05.09.png` in `dir`, the same shape macOS uses for screenshots.
-/// A second capture in the same second gets ` 2`, so neither overwrites the other.
+/// A second capture in the same second gets ` 2`, so neither overwrites the other. Names
+/// handed out are remembered, since a background save writes the file only later.
 pub fn timestamp_path(dir: &std::path::Path) -> PathBuf {
+    static TAKEN: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
     let now = unsafe { libc::time(std::ptr::null_mut()) };
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&now, &mut tm) };
@@ -327,10 +335,13 @@ pub fn timestamp_path(dir: &std::path::Path) -> PathBuf {
         tm.tm_min,
         tm.tm_sec
     );
-    (1..)
+    let mut taken = TAKEN.lock().unwrap_or_else(|e| e.into_inner());
+    let path = (1..)
         .map(|n| dir.join(if n == 1 { format!("{stem}.png") } else { format!("{stem} {n}.png") }))
-        .find(|p| ["png", "jpg", "gif"].iter().all(|ext| !p.with_extension(ext).exists()))
-        .expect("an unused name")
+        .find(|p| !taken.contains(p) && ["png", "jpg", "jpeg", "gif"].iter().all(|ext| !p.with_extension(ext).exists()))
+        .expect("an unused name");
+    taken.push(path.clone());
+    path
 }
 
 fn ct_line(text: &str, size: f32, bold: bool) -> Option<CFRetained<CTLine>> {

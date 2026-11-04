@@ -379,7 +379,11 @@ impl Render for Overlay {
                     this.track(e.position, cx);
                 }),
             )
-            .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
+                // Keys go to the key window, so it follows the pointer across displays.
+                if !window.is_window_active() {
+                    mac::make_key(window);
+                }
                 this.modifiers = e.modifiers;
                 this.track(e.position, cx);
             }))

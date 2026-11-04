@@ -1976,8 +1976,13 @@ impl Editor {
     fn key_up(&mut self, e: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         match e.keystroke.key.as_str() {
             "space" => self.space = false,
-            "1" | "up" | "down" => self.ruler.retain(|a| *a != Axis::Vertical),
-            "2" | "left" | "right" => self.ruler.retain(|a| *a != Axis::Horizontal),
+            // An axis stays while any of its keys is still down: 1 or ↑↓, 2 or ←→.
+            "1" | "up" | "down" if ![18, 125, 126].into_iter().any(mac::key_pressed) => {
+                self.ruler.retain(|a| *a != Axis::Vertical)
+            }
+            "2" | "left" | "right" if ![19, 123, 124].into_iter().any(mac::key_pressed) => {
+                self.ruler.retain(|a| *a != Axis::Horizontal)
+            }
             _ => return,
         }
         cx.notify();
@@ -2394,12 +2399,27 @@ fn straight(premultiplied: &[u8], alpha: f32) -> Vec<u8> {
 }
 
 /// Encodes off the main thread; Auto JPEG may change the extension.
+/// Encodes run in parallel, so a save that finishes after a newer one to the same file skips its write.
 fn write_later(pixmap: Arc<(tiny_skia::Pixmap, f32)>, path: PathBuf, cx: &App) -> Task<Result<PathBuf, String>> {
+    static LATEST: std::sync::Mutex<Vec<(PathBuf, u64)>> = std::sync::Mutex::new(Vec::new());
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let auto = settings::get(cx).save_auto_jpeg;
+    let generation = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    {
+        let mut latest = LATEST.lock().unwrap_or_else(|e| e.into_inner());
+        latest.retain(|(p, _)| *p != path);
+        latest.push((path.clone(), generation));
+    }
     cx.background_spawn(async move {
         let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
         let (bytes, ext) = export::for_save(&pixmap.0, pixmap.1, auto);
+        let mut latest = LATEST.lock().unwrap_or_else(|e| e.into_inner());
+        let stale = latest.iter().any(|(p, g)| *p == path && *g != generation);
+        latest.retain(|(p, g)| !(*p == path && *g == generation));
         let path = path.with_extension(ext);
+        if stale {
+            return Ok(path);
+        }
         std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
         mac::mark_screenshot(&path);
         Ok(path)
