@@ -217,6 +217,7 @@ pub struct Settings {
     pub fullscreen_all_displays: bool,
     /// `kiri --capture` may run captures; off, a request asks first.
     pub automation: bool,
+    pub auto_update: bool,
     pub hotkeys: BTreeMap<Capture, Option<String>>,
     pub styles: BTreeMap<Tool, Style>,
     pub backdrop: Option<crate::backdrop::Backdrop>,
@@ -251,6 +252,7 @@ impl Default for Settings {
             scroll_reverse: false,
             scroll_manual: false,
             automation: false,
+            auto_update: true,
             freeze_screen: false,
             fullscreen_all_displays: false,
             hotkeys: BTreeMap::new(),

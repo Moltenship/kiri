@@ -268,7 +268,14 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
         title: "General",
         icon: IconName::Settings,
         groups: vec![
-            group(None, [row("Launch at login", login)]),
+            group(
+                None,
+                [
+                    row("Launch at login", login),
+                    row("Check for updates automatically", toggle("updates", |s| s.auto_update, |s, v| s.auto_update = v, cx))
+                        .description(format!("Downloads new versions from GitHub and installs them when Kiri quits. This is {}.", env!("CARGO_PKG_VERSION"))),
+                ],
+            ),
             group(
                 "After capture",
                 [

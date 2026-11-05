@@ -18,6 +18,7 @@ mod stitch;
 mod text_edit;
 mod tiled;
 mod toast;
+mod update;
 mod window_capture;
 
 use std::borrow::Cow;
@@ -102,6 +103,7 @@ impl AssetSource for KiriAssets {
 
 enum Command {
     Capture(Capture, Instant),
+    CheckForUpdates,
     Cancel,
     OpenFile,
     Open(PathBuf, bool),
@@ -252,6 +254,7 @@ fn main() {
         }
         refresh_tray(cx);
         ocr::warm_up(cx);
+        update::start(cx);
 
         cx.spawn(async move |cx| {
             while let Some(command) = rx.next().await {
@@ -293,6 +296,7 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
             "pins" => Command::CloseAllPins,
             "login" => Command::ToggleLaunchAtLogin,
             "quit" => Command::Quit,
+            "update" => Command::CheckForUpdates,
             _ => match Capture::ALL.iter().find(|c| format!("{c:?}") == id) {
                 Some(&capture) => Command::Capture(capture, Instant::now()),
                 None => Command::Menu(id.to_string()),
@@ -302,7 +306,7 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
     }));
 
     let tray = TrayIconBuilder::new()
-        .with_menu(Box::new(tray_menu(&settings::Settings::default())))
+        .with_menu(Box::new(tray_menu(&settings::Settings::default(), None)))
         .with_icon_templated(tray_glyph())
         .with_tooltip("Kiri")
         .build()
@@ -318,7 +322,8 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
 }
 
 /// Same order as the alternative: the frequent captures on top, the rest under "More".
-fn tray_menu(s: &settings::Settings) -> Menu {
+fn tray_menu(s: &settings::Settings, ready: Option<&str>) -> Menu {
+    let update_label = ready.map_or("Check for Updates…".to_string(), |v| format!("Restart to Update to {v}"));
     let item = |c: Capture| {
         let accel = s.hotkey(c).and_then(|k| k.parse().ok());
         MenuItem::with_id(format!("{c:?}"), c.label(), true, accel)
@@ -360,13 +365,15 @@ fn tray_menu(s: &settings::Settings) -> Menu {
         &PredefinedMenuItem::separator(),
         &CheckMenuItem::with_id("login", "Launch at Login", true, settings::launch_at_login(), None),
         &item(Capture::Settings),
+        &MenuItem::with_id("update", update_label, true, None),
         &MenuItem::with_id("quit", "Quit Kiri", true, None),
     ]);
     menu
 }
 
 pub fn refresh_tray(cx: &mut App) {
-    let menu = tray_menu(settings::get(cx));
+    let ready = cx.try_global::<update::Update>().and_then(|u| u.ready.as_ref()).map(|(v, _)| v.clone());
+    let menu = tray_menu(settings::get(cx), ready.as_deref());
     cx.global::<Resident>().tray.set_menu(Some(Box::new(menu)));
 }
 
@@ -470,6 +477,10 @@ fn handle(command: Command, cx: &mut App) {
         Command::Menu(id) => {
             pin::menu_event(&id, cx);
         }
+        Command::CheckForUpdates => match cx.default_global::<update::Update>().ready.is_some() {
+            true => update::restart(cx),
+            false => update::check(true, cx),
+        },
         Command::Quit => cx.quit(),
     }
 }

@@ -42,7 +42,6 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Cloud upload and share links.
 - Licensing, paid tiers, and feature gates. Everything the alternative locks behind a license (custom colors, gradient backdrops, Add Capture) is free in Kiri.
 - Telemetry. Kiri collects nothing.
-- A built-in updater. Kiri uses each platform's normal update channel.
 - A splash window.
 
 ## Requirements per feature
@@ -173,6 +172,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - One Kiri per user: launching it again opens Settings in the running one, or the file passed with `--open`, so there is never a second tray icon.
 - `kiri --capture <action>` (`area`, `fullscreen`, `active-window`, …) runs a capture in the running Kiri, for scripts, Shortcuts, and launchers. `--then edit,thumbnail,copy,save` replaces the after-capture settings for that one capture, like the alternative's `then=`. Kiri holds the screen recording permission, so this is off until Settings → Advanced → Automation allows it, and a request while off shows a toast with Allow, like the alternative's deep-link prompt. A URL scheme waits for the app bundle.
 - Launch at login, in Settings and as a checkmark in the tray menu, as in the alternative.
+- Updates come from GitHub releases. A daily check, on by default in Settings → General, downloads a newer notarized `Kiri.zip` and installs it when Kiri quits; the tray then offers Restart to Update. Only a build signed with Kiri's Developer ID may replace the app, and the stable signature keeps the Screen Recording permission across updates. Pre-releases are offered too while Kiri is in beta.
 - Reopen Last Screenshot (tray, optional hotkey) brings back the last closed editor with its annotations still editable, crop, and backdrop, but not its undo history. Where the alternative keeps its window hidden, Kiri keeps the image as a PNG in memory, so the resident app stays small.
 
 ### 18 Settings

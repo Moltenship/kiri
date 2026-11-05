@@ -45,3 +45,7 @@ Each tool has a letter: `V` select and crop, `A` arrow, `T` text, `R` rectangle,
 Add `--then` to choose what happens after that one capture, instead of the after-capture settings: any of `edit`, `thumbnail`, `copy`, and `save`, separated by commas, as in `kiri --capture area --then copy,save`.
 
 Kiri can record your screen, so it won't take a capture for another app until you allow it. The first request shows an Allow button. Settings → Advanced → Automation turns it on or off.
+
+## Updates
+
+Kiri checks GitHub for a new version once a day, downloads it in the background, and installs it when you quit. To install right away, choose Restart to Update in the menu bar; Check for Updates… checks now. Settings → General turns automatic checks off.
