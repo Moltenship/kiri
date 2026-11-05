@@ -337,6 +337,7 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
 /// Same order as the alternative: the frequent captures on top, the rest under "More".
 fn tray_menu(s: &settings::Settings, available: Option<&str>) -> Menu {
     let update = match available {
+        _ if settings::dev() => IconMenuItem::with_id("update", "Kiri Dev", false, None, None),
         Some(version) => IconMenuItem::with_id("update", format!("Update to Kiri {version}…"), true, Some(red_dot()), None),
         None => IconMenuItem::with_id("update", "Check for Updates…", true, None, None),
     };

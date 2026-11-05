@@ -81,7 +81,7 @@ cargo build --release
 ./target/release/kiri
 ```
 
-A bare binary is enough for development. `scripts/release.sh` builds the signed and notarized app, as [docs/operations/release.md](docs/operations/release.md) describes.
+A bare binary is enough for development. It runs as Kiri Dev, with its own settings and menu bar icon, beside an installed Kiri. `scripts/release.sh` builds the signed and notarized app, as [docs/operations/release.md](docs/operations/release.md) describes.
 
 ## Contributing
 

@@ -23,7 +23,7 @@ pub struct Update {
 impl Global for Update {}
 
 /// The `.app` Kiri runs from; `None` for a bare binary, which can't update itself.
-fn bundle() -> Option<PathBuf> {
+pub fn bundle() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let app = exe.parent()?.parent()?.parent()?;
     (app.extension()? == "app").then(|| app.to_path_buf())

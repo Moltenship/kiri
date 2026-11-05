@@ -305,11 +305,23 @@ pub struct Current(Settings);
 
 impl Global for Current {}
 
+/// A build run outside Kiri.app keeps its own settings, socket, and login item,
+/// so it runs beside an installed Kiri instead of handing off to it.
+pub fn dev() -> bool {
+    static DEV: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| crate::update::bundle().is_none());
+    *DEV
+}
+
 pub fn path() -> PathBuf {
+    let dir = if dev() { "Kiri Dev" } else { "Kiri" };
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default()
-        .join("Library/Application Support/Kiri/settings.json")
+        .join(format!("Library/Application Support/{dir}/settings.json"))
+}
+
+fn launch_agent_label() -> &'static str {
+    if dev() { "sh.kiri.Kiri.dev" } else { "sh.kiri.Kiri" }
 }
 
 pub fn load(cx: &mut App) {
@@ -384,7 +396,7 @@ fn launch_agent() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default()
-        .join("Library/LaunchAgents/sh.kiri.Kiri.plist")
+        .join(format!("Library/LaunchAgents/{}.plist", launch_agent_label()))
 }
 
 pub fn launch_at_login() -> bool {
@@ -406,13 +418,14 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key><string>sh.kiri.Kiri</string>
+    <key>Label</key><string>{label}</string>
     <key>ProgramArguments</key><array><string>{exe}</string></array>
     <key>RunAtLoad</key><true/>
     <key>ProcessType</key><string>Interactive</string>
 </dict>
 </plist>
-"#
+"#,
+        label = launch_agent_label()
     );
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
