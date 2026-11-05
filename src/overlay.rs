@@ -362,10 +362,11 @@ impl Render for Overlay {
             _ => None,
         };
         let numbers = match (picking, selection, cursor) {
-            (false, Some(sel), Some(c)) => Some((c, [sel.size.width, sel.size.height])),
-            (false, None, Some(c)) => Some((c, [c.x, c.y])),
+            (false, Some(sel), Some(_)) => Some([sel.size.width, sel.size.height]),
+            (false, None, Some(c)) => Some([c.x, c.y]),
             _ => None,
-        };
+        }
+        .map(|n| n.map(|v| v.as_f32().round() as i32));
         let hint = match self.mode {
             Mode::Text => Some("Select text or a QR code"),
             Mode::Scroll { .. } if crate::settings::get(cx).scroll_manual => Some("Select the area, then scroll it slowly · Esc stops"),
@@ -431,7 +432,7 @@ impl Render for Overlay {
                 canvas(
                     |_, _, _| {},
                     move |_, _, window, _| {
-                        mac::set_screenshot_cursor(window, picking);
+                        mac::set_screenshot_cursor(window, picking, numbers);
                         for (r, tile) in tiles {
                             let b = Bounds::new(
                                 point(px(r.x as f32 / scale), px(r.y as f32 / scale)),
@@ -461,23 +462,6 @@ impl Render for Overlay {
                         .text_sm()
                         .child(hint),
                 )
-            }))
-            .children(numbers.map(|(c, [a, b])| {
-                // Drawn like the system grabber's: two lines under the crosshair, dark digits
-                // with a light halo so they read on any screen.
-                let lines = [a, b].map(|v| v.as_f32().round().to_string());
-                let text = |color: Hsla| {
-                    div().flex().flex_col().text_color(color).children(lines.clone().map(|l| div().child(l)))
-                };
-                let halo = [(-1., 0.), (1., 0.), (0., -1.), (0., 1.), (-1., -1.), (1., 1.), (-1., 1.), (1., -1.)];
-                div()
-                    .absolute()
-                    .left(c.x + px(10.))
-                    .top(c.y + px(3.))
-                    .text_size(px(12.))
-                    .line_height(px(13.))
-                    .children(halo.map(|(dx, dy)| div().absolute().left(px(dx)).top(px(dy)).child(text(white().opacity(0.9)))))
-                    .child(div().relative().child(text(black())))
             }))
             .children(label.map(|(c, text)| {
                 div()

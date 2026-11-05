@@ -10,8 +10,8 @@ use gpui_kit::Window;
 use objc2::runtime::ProtocolObject;
 use objc2::AnyThread;
 use objc2_app_kit::{
-    NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
-    NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSView,
+    NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSFont, NSFontAttributeName, NSFontWeightRegular, NSForegroundColorAttributeName, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
+    NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSStringDrawing, NSStrokeColorAttributeName, NSStrokeWidthAttributeName, NSView,
     NSWindowStyleMask,
 };
 use objc2_core_foundation::{
@@ -28,7 +28,7 @@ use objc2_core_text::{
     CTFont, CTFontUIFontType, CTLine, kCTFontAttributeName,
     kCTForegroundColorFromContextAttributeName,
 };
-use objc2_foundation::{NSArray, NSData, NSError, NSString, NSURL};
+use objc2_foundation::{NSArray, NSData, NSDictionary, NSError, NSNumber, NSString, NSURL};
 use objc2_screen_capture_kit::SCScreenshotManager;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -323,25 +323,75 @@ fn load_cursor(name: &str, hot_x: f64, hot_y: f64) -> Option<objc2::rc::Retained
     Some(NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, CGPoint::new(hot_x, hot_y)))
 }
 
-/// Shows the system screenshot cursor over an overlay window. Kiri isn't the active app
-/// while selecting, so only a cursor rect sticks, and AppKit only applies the rects a view
-/// gives from `resetCursorRects`. The overlay's view gets a subclass whose rect is ours.
-/// The rect covers the screen, so the pointer never enters it: each paint sets the cursor too.
-pub fn set_screenshot_cursor(window: &Window, window_pick: bool) -> bool {
+/// The screenshot cursor with `numbers` drawn under the crosshair, the way ⇧⌘4 shows them.
+/// Being part of the cursor, they move with the pointer instead of a frame behind it.
+fn numbered_cursor(window_pick: bool, numbers: Option<[i32; 2]>) -> Option<objc2::rc::Retained<NSCursor>> {
+    use std::cell::RefCell;
+    type Key = (bool, Option<[i32; 2]>);
+    thread_local! {
+        static LAST: RefCell<Option<(Key, objc2::rc::Retained<NSCursor>)>> = const { RefCell::new(None) };
+    }
+    let key = (window_pick, numbers);
+    if let Some(cursor) = LAST.with_borrow(|last| last.as_ref().filter(|(k, _)| *k == key).map(|(_, c)| c.clone())) {
+        return Some(cursor);
+    }
+    let base = screenshot_cursor(window_pick)?;
+    let cursor = match numbers {
+        None => base,
+        Some(numbers) => {
+            let (image, hot) = (base.image(), base.hotSpot());
+            let lines = numbers.map(|n| NSString::from_str(&n.to_string()));
+            let font = NSFont::monospacedDigitSystemFontOfSize_weight(12., unsafe { NSFontWeightRegular });
+            let attrs = |stroke: Option<f64>| {
+                let (keys, color, width) = match stroke {
+                    Some(w) => (unsafe { [NSFontAttributeName, NSStrokeColorAttributeName, NSStrokeWidthAttributeName] }, NSColor::colorWithWhite_alpha(1., 0.9), w),
+                    None => (unsafe { [NSFontAttributeName, NSForegroundColorAttributeName, NSStrokeWidthAttributeName] }, NSColor::blackColor(), 0.),
+                };
+                let width = NSNumber::new_f64(width);
+                NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(&keys, &[font.as_ref(), color.as_ref(), width.as_ref()])
+            };
+            let (halo, fill) = (attrs(Some(18.)), attrs(None));
+            let size = CGSize::new(image.size().width.max(hot.x + 52.), image.size().height.max(hot.y + 34.));
+            let draw = RcBlock::new(move |_: CGRect| -> objc2::runtime::Bool {
+                image.drawInRect(CGRect::new(CGPoint::ZERO, image.size()));
+                for (i, line) in lines.iter().enumerate() {
+                    let at = CGPoint::new(hot.x + 10., hot.y + 3. + 13. * i as f64);
+                    unsafe {
+                        line.drawAtPoint_withAttributes(at, Some(&halo));
+                        line.drawAtPoint_withAttributes(at, Some(&fill));
+                    }
+                }
+                objc2::runtime::Bool::YES
+            });
+            let image = NSImage::imageWithSize_flipped_drawingHandler(size, true, &draw);
+            NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, hot)
+        }
+    };
+    LAST.set(Some((key, cursor.clone())));
+    Some(cursor)
+}
+
+/// Shows the system screenshot cursor over an overlay window, with `numbers` under it.
+/// Kiri isn't the active app while selecting, so only a cursor rect sticks, and AppKit only
+/// applies the rects a view gives from `resetCursorRects`. The overlay's view gets a subclass
+/// whose rect is ours. The rect covers the screen, so the pointer never enters it: each paint
+/// sets the cursor too.
+pub fn set_screenshot_cursor(window: &Window, window_pick: bool, numbers: Option<[i32; 2]>) -> bool {
     use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
     use std::cell::Cell;
     thread_local! {
-        static PICK: Cell<bool> = const { Cell::new(false) };
+        static SHOWN: Cell<(bool, Option<[i32; 2]>)> = const { Cell::new((false, None)) };
         static CLASS: Cell<Option<&'static AnyClass>> = const { Cell::new(None) };
     }
     extern "C-unwind" fn reset_cursor_rects(this: &AnyObject, _: Sel) {
         // SAFETY: only overlay views, which are NSViews, get this subclass.
         let view = unsafe { &*(this as *const AnyObject as *const NSView) };
-        if let Some(cursor) = screenshot_cursor(PICK.get()) {
+        let (pick, numbers) = SHOWN.get();
+        if let Some(cursor) = numbered_cursor(pick, numbers) {
             view.addCursorRect_cursor(view.bounds(), &cursor);
         }
     }
-    let (Some(_), Some(view)) = (screenshot_cursor(window_pick), ns_view(window)) else {
+    let (Some(cursor), Some(view)) = (numbered_cursor(window_pick, numbers), ns_view(window)) else {
         return false;
     };
     let current = view.class();
@@ -358,15 +408,13 @@ pub fn set_screenshot_cursor(window: &Window, window_pick: bool) -> bool {
         // SAFETY: the subclass adds no ivars, only an override, so the object layout is unchanged.
         unsafe { AnyObject::set_class(view.as_ref(), class) };
     }
-    if swapped || PICK.get() != window_pick {
-        PICK.set(window_pick);
+    if swapped || SHOWN.get() != (window_pick, numbers) {
+        SHOWN.set((window_pick, numbers));
         if let Some(ns_window) = view.window() {
             ns_window.invalidateCursorRectsForView(view);
         }
     }
-    if let Some(cursor) = screenshot_cursor(window_pick) {
-        cursor.set();
-    }
+    cursor.set();
     true
 }
 
