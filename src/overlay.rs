@@ -367,6 +367,11 @@ impl Render for Overlay {
             _ => None,
         }
         .map(|n| n.map(|v| v.as_f32().round() as i32));
+        // Without the system's screenshot cursor, the numbers it would carry go by the pointer.
+        let label = label.or_else(|| match (mac::has_screenshot_cursor(), numbers, cursor) {
+            (false, Some([a, b]), Some(c)) => Some((c, format!("{a}\n{b}"))),
+            _ => None,
+        });
         let hint = match self.mode {
             Mode::Text => Some("Select text or a QR code"),
             Mode::Scroll { .. } if crate::settings::get(cx).scroll_manual => Some("Select the area, then scroll it slowly · Esc stops"),

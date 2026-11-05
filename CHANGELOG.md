@@ -13,6 +13,7 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 - Windows: Kiri.exe has Kiri's icon, in Explorer, the taskbar, and Alt+Tab.
 - Windows: updates from GitHub releases, which carry Kiri for Windows as `Kiri-windows-x64.zip`.
 - Windows: Scrolling Capture, down or up, by itself or by hand.
+- Windows: area capture shows the pointer's position, and the selection's size while dragging, beside the pointer.
 - Windows: the first-run window, with Ctrl+Shift+1 and Ctrl+Shift+2 next to Snipping Tool or Print Screen in its place.
 - Windows: Settings warns when a hotkey is one of Windows' own, and Use Print Screen gives PrtScn to Capture Area in place of Snipping Tool.
 
