@@ -62,9 +62,16 @@ pub fn pixelate(bgra: &mut [u8], w: u32, h: u32, cell: u32, seed: u64) {
         let s = (cell as f32 * rng.next(0.5, 2.)).round().max(2.) as u32;
         if left < s + cell / 2 { left } else { s }
     };
-    let mut by = 0;
+    // A strip under two cells tall, like a line of text, gets even rows, so no row
+    // ends mid-line and the strip keeps its outline.
+    let rows = (h < 2 * cell).then(|| (h as f32 / cell as f32).round().max(1.) as u32);
+    let (mut by, mut row) = (0, 0);
     while by < h {
-        let bh = span(&mut rng, h - by);
+        row += 1;
+        let bh = match rows {
+            Some(n) => h * row / n - by,
+            None => span(&mut rng, h - by),
+        };
         let mut bx = 0;
         while bx < w {
             let bw = span(&mut rng, w - bx);

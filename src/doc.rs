@@ -1214,14 +1214,19 @@ impl Object {
                 let Some(lines) = text else {
                     return vec![Prim::Pixels { key: self.id, op, rect: r }];
                 };
-                // OCR boxes clip ascenders and descenders. Overlapping boxes are merged so
-                // erase never samples its edge colours from a neighbouring line's glyphs.
+                // OCR boxes clip ascenders and descenders. Erase needs a wider margin to sample
+                // clean background, and merges overlapping boxes so it never samples its edge
+                // colours from a neighbouring line's glyphs. Pixelate stays tight, as in the
+                // alternative, and merges only boxes on the same line.
+                let erase = op == PixelOp::Erase;
+                let joins = |a: &R, b: &R| a.intersect(b).is_some_and(|i| erase || i.h > a.h.min(b.h) / 2.);
                 let mut areas: Vec<R> = Vec::new();
                 for line in lines.iter() {
-                    let Some(mut a) = line.inflate((line.h * 0.25).max(2. * cx.scale)).intersect(&r) else {
+                    let margin = if erase { (line.h * 0.25).max(2. * cx.scale) } else { line.h * 0.15 };
+                    let Some(mut a) = line.inflate(margin).intersect(&r) else {
                         continue;
                     };
-                    while let Some(i) = areas.iter().position(|b| b.intersect(&a).is_some()) {
+                    while let Some(i) = areas.iter().position(|b| joins(&a, b)) {
                         a = a.union(&areas.swap_remove(i));
                     }
                     areas.push(a);
