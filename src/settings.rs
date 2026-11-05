@@ -359,6 +359,7 @@ pub fn path() -> PathBuf {
     base.join(dir).join("settings.json")
 }
 
+#[cfg(not(windows))]
 fn launch_agent_label() -> &'static str {
     if dev() { "sh.kiri.Kiri.dev" } else { "sh.kiri.Kiri" }
 }
@@ -431,6 +432,7 @@ pub fn export(file: &std::path::Path, cx: &App) -> Result<(), String> {
 }
 
 /// A per-user LaunchAgent: unlike `SMAppService`, it works for an unbundled binary.
+#[cfg(not(windows))]
 fn launch_agent() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -438,14 +440,16 @@ fn launch_agent() -> PathBuf {
         .join(format!("Library/LaunchAgents/{}.plist", launch_agent_label()))
 }
 
+#[cfg(windows)]
+pub use crate::mac::{launch_at_login, set_launch_at_login};
+
+#[cfg(not(windows))]
 pub fn launch_at_login() -> bool {
-    !cfg!(windows) && launch_agent().exists()
+    launch_agent().exists()
 }
 
+#[cfg(not(windows))]
 pub fn set_launch_at_login(on: bool) -> Result<(), String> {
-    if cfg!(windows) {
-        return Err("Not available on Windows yet".into());
-    }
     let path = launch_agent();
     if !on {
         return match std::fs::remove_file(&path) {

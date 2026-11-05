@@ -615,6 +615,32 @@ pub fn accept_pipe(name: &Path) -> Option<std::fs::File> {
     }
 }
 
+const RUN_KEY: windows::core::PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+
+fn run_name() -> windows::core::PCWSTR {
+    if crate::settings::dev() { w!("Kiri Dev") } else { w!("Kiri") }
+}
+
+pub fn launch_at_login() -> bool {
+    use windows::Win32::System::Registry::*;
+    unsafe { RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, run_name(), RRF_RT_REG_SZ, None, None, None) }.is_ok()
+}
+
+pub fn set_launch_at_login(on: bool) -> Result<(), String> {
+    use windows::Win32::System::Registry::*;
+    let done = if on {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let value: Vec<u16> = format!("\"{}\"", exe.display()).encode_utf16().chain([0]).collect();
+        unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, RUN_KEY, run_name(), REG_SZ.0, Some(value.as_ptr().cast()), (value.len() * 2) as u32) }
+    } else {
+        match unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, run_name()) } {
+            windows::Win32::Foundation::ERROR_FILE_NOT_FOUND => Default::default(),
+            other => other,
+        }
+    };
+    done.ok().map_err(|e| e.message())
+}
+
 pub mod window_capture;
 
 pub mod scrolling {
@@ -628,3 +654,4 @@ pub mod scrolling {
 }
 
 pub mod ocr;
+
