@@ -1,3 +1,6 @@
+// A tray app; a console would open beside it. Redirected output still reaches a log.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 #[cfg(target_os = "macos")]
 mod alloc;
 mod backdrop;
@@ -281,6 +284,8 @@ fn main() {
         gpui_kit::init(cx);
         load_theme(cx);
         cx.set_activation_policy(ActivationPolicy::Accessory);
+        // Kiri lives in the tray; off macOS GPUI would quit with the last window.
+        cx.set_quit_mode(QuitMode::Explicit);
         let first_launch = !settings::path().exists();
         settings::load(cx);
         apply_appearance(cx);

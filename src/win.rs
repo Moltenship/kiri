@@ -520,8 +520,8 @@ pub fn text_width(text: &str, size: f32, bold: bool) -> f32 {
 /// One line of text as premultiplied RGBA, laid out in a line box of `size * line_height`
 /// with the line centered in it. GDI draws white on black and the gray becomes the coverage.
 pub fn text_image(text: &str, size: f32, line_height: f32, rgb: u32, bold: bool) -> Option<(u32, u32, Vec<u8>)> {
+    let w = text_width(text, size, bold).ceil() as i32 + 2;
     let text = wide(text);
-    let w = text_width(&String::from_utf16_lossy(&text), size, bold).ceil() as i32 + 2;
     let h = (size * line_height).ceil() as i32;
     if w <= 2 || h <= 0 {
         return None;
