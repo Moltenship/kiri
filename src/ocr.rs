@@ -1,16 +1,25 @@
+#[cfg(target_os = "macos")]
 use objc2::AnyThread;
+#[cfg(target_os = "macos")]
 use objc2::rc::{Retained, autoreleasepool};
+#[cfg(target_os = "macos")]
 use objc2_core_foundation::{CFData, CFRetained, CGRect};
+#[cfg(target_os = "macos")]
 use objc2_core_graphics::{
     CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
     CGImageByteOrderInfo,
 };
+#[cfg(target_os = "macos")]
 use objc2_foundation::{NSArray, NSDictionary, NSLocale, NSString};
+#[cfg(target_os = "macos")]
 use objc2_vision::{
     VNDetectBarcodesRequest, VNImageRequestHandler, VNRecognizeTextRequest,
     VNRecognizedTextObservation, VNRequest, VNRequestTextRecognitionLevel,
 };
+#[cfg(windows)]
+pub use crate::win::ocr::{languages, recognize, text_boxes};
 
+#[cfg_attr(windows, allow(dead_code))]
 pub enum Recognized {
     Barcode(String),
     Text(String),
@@ -20,6 +29,7 @@ pub enum Recognized {
 /// `bgra` is tightly packed BGRA8 (premultiplied alpha, alpha is usually 255), width*height*4 bytes.
 /// `languages` are BCP-47 codes like "en-US", "ru-RU"; empty means automatic language detection.
 /// Blocking; Kiri calls it from a background thread.
+#[cfg(target_os = "macos")]
 pub fn recognize(
     bgra: &[u8],
     width: u32,
@@ -65,6 +75,7 @@ pub fn recognize(
 }
 
 /// Glyph/line boxes for "blur text" redaction: rectangles in image pixel coordinates, origin top-left.
+#[cfg(target_os = "macos")]
 pub fn text_boxes(
     bgra: &[u8],
     width: u32,
@@ -92,6 +103,7 @@ pub fn text_boxes(
 }
 
 /// Every language this Mac's Vision can read, as (code, name in the user's language). Asked once.
+#[cfg(target_os = "macos")]
 pub fn languages() -> &'static [(String, String)] {
     static LANGUAGES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
     LANGUAGES.get_or_init(|| {
@@ -114,6 +126,7 @@ pub fn languages() -> &'static [(String, String)] {
     })
 }
 
+#[cfg(target_os = "macos")]
 fn text_request(language_correction: bool) -> Retained<VNRecognizeTextRequest> {
     let request = VNRecognizeTextRequest::new();
     request.setRecognitionLevel(VNRequestTextRecognitionLevel::Accurate);
@@ -122,6 +135,7 @@ fn text_request(language_correction: bool) -> Retained<VNRecognizeTextRequest> {
 }
 
 /// Observations with their normalized, bottom-left-origin boxes, sorted top to bottom.
+#[cfg(target_os = "macos")]
 fn lines(request: &VNRecognizeTextRequest) -> Vec<(CGRect, Retained<VNRecognizedTextObservation>)> {
     let mut lines: Vec<_> = request
         .results()
@@ -139,12 +153,14 @@ fn lines(request: &VNRecognizeTextRequest) -> Vec<(CGRect, Retained<VNRecognized
     lines
 }
 
+#[cfg(target_os = "macos")]
 fn perform(handler: &VNImageRequestHandler, request: &VNRequest) -> Result<(), String> {
     handler
         .performRequests_error(&NSArray::from_slice(&[request]))
         .map_err(|e| format!("Recognition failed: {}", e.localizedDescription()))
 }
 
+#[cfg(target_os = "macos")]
 fn handler(
     bgra: &[u8],
     width: u32,
@@ -160,6 +176,7 @@ fn handler(
     })
 }
 
+#[cfg(target_os = "macos")]
 fn cg_image(bgra: &[u8], width: u32, height: u32) -> Result<CFRetained<CGImage>, String> {
     let (w, h) = (width as usize, height as usize);
     if w == 0 || h == 0 || w.checked_mul(h).and_then(|n| n.checked_mul(4)) != Some(bgra.len()) {

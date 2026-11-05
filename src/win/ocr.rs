@@ -1,0 +1,82 @@
+//! Text recognition through Windows.Media.Ocr, in the languages installed in Windows.
+
+use windows::Globalization::Language;
+use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
+use windows::Media::Ocr::OcrEngine;
+use windows::Storage::Streams::DataWriter;
+use windows::core::HSTRING;
+
+use crate::ocr::Recognized;
+
+type Box4 = (f32, f32, f32, f32);
+
+const MARGIN: u32 = 24;
+
+/// Windows has no barcode reader for still images, so this finds text only.
+pub fn recognize(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<Recognized, String> {
+    let text = lines(bgra, width, height, languages)?.into_iter().map(|(_, line)| line).collect::<Vec<_>>().join("\n");
+    Ok(if text.trim().is_empty() { Recognized::Nothing } else { Recognized::Text(text) })
+}
+
+/// Line boxes in image pixels, origin top-left.
+pub fn text_boxes(bgra: &[u8], width: u32, height: u32) -> Result<Vec<Box4>, String> {
+    Ok(lines(bgra, width, height, &[])?.into_iter().map(|(r, _)| r).collect())
+}
+
+/// Every installed recognition language, as (code, name in the user's language). Asked once.
+pub fn languages() -> &'static [(String, String)] {
+    static LANGUAGES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    LANGUAGES.get_or_init(|| {
+        let Ok(list) = OcrEngine::AvailableRecognizerLanguages() else { return Vec::new() };
+        list.into_iter().filter_map(|l| Some((l.LanguageTag().ok()?.to_string(), l.DisplayName().ok()?.to_string()))).collect()
+    })
+}
+
+/// Lines top to bottom with their boxes. An empty `languages` reads in the user's languages.
+fn lines(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<Vec<(Box4, String)>, String> {
+    let fail = |e: windows::core::Error| format!("Recognition failed: {}", e.message());
+    if width == 0 || height == 0 || bgra.len() != (width * height * 4) as usize {
+        return Err("Invalid image".into());
+    }
+    let chosen = languages
+        .first()
+        .and_then(|code| OcrEngine::TryCreateFromLanguage(&Language::CreateLanguage(&HSTRING::from(code)).ok()?).ok());
+    let engine = match chosen {
+        Some(engine) => engine,
+        None => OcrEngine::TryCreateFromUserProfileLanguages()
+            .map_err(|_| "Add a language with text recognition in Windows Settings".to_string())?,
+    };
+    // Text touching the edge goes unread, so the image gets a margin in its corner color.
+    // Larger images are read at a whole fraction of their size.
+    let max = OcrEngine::MaxImageDimension().map_err(fail)?.max(2 * MARGIN + 1);
+    let k = width.max(height).div_ceil(max - 2 * MARGIN).max(1);
+    let (w, h) = (width / k + 2 * MARGIN, height / k + 2 * MARGIN);
+    let mut pixels: Vec<u8> = bgra[..4].iter().copied().cycle().take((w * h * 4) as usize).collect();
+    for y in 0..height / k {
+        for x in 0..width / k {
+            let (from, to) = (((y * k * width + x * k) * 4) as usize, (((y + MARGIN) * w + x + MARGIN) * 4) as usize);
+            pixels[to..to + 4].copy_from_slice(&bgra[from..from + 4]);
+        }
+    }
+    let writer = DataWriter::new().map_err(fail)?;
+    writer.WriteBytes(&pixels).map_err(fail)?;
+    let bitmap = SoftwareBitmap::CreateCopyFromBuffer(&writer.DetachBuffer().map_err(fail)?, BitmapPixelFormat::Bgra8, w as i32, h as i32)
+        .map_err(fail)?;
+    let result = engine.RecognizeAsync(&bitmap).map_err(fail)?.join().map_err(fail)?;
+    let k = k as f32;
+    let mut lines = Vec::new();
+    for line in result.Lines().map_err(fail)? {
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for word in line.Words().map_err(fail)? {
+            let r = word.BoundingRect().map_err(fail)?;
+            (x0, y0) = (x0.min(r.X), y0.min(r.Y));
+            (x1, y1) = (x1.max(r.X + r.Width), y1.max(r.Y + r.Height));
+        }
+        if x1 > x0 && y1 > y0 {
+            let (x, y) = (x0 - MARGIN as f32, y0 - MARGIN as f32);
+            lines.push(((x * k, y * k, (x1 - x0) * k, (y1 - y0) * k), line.Text().map_err(fail)?.to_string()));
+        }
+    }
+    lines.sort_by(|(a, _), (b, _)| a.1.total_cmp(&b.1));
+    Ok(lines)
+}

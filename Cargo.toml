@@ -33,8 +33,13 @@ objc2-vision = { version = "0.3", default-features = false, features = ["std", "
 # Already in gpui's tree; Windows' strftime aborts on a bad field, chrono reports it.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 windows = { version = "0.62", features = [
+    "Foundation_Collections",
+    "Globalization",
     "Graphics_Capture",
     "Graphics_DirectX_Direct3D11",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",

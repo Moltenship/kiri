@@ -627,20 +627,4 @@ pub mod scrolling {
     pub fn stop(_cx: &mut App) {}
 }
 
-pub mod ocr {
-    use gpui_kit::App;
-
-    pub fn recognize_and_copy(_bgra: Vec<u8>, _w: u32, _h: u32, cx: &mut App) {
-        crate::toast::show(super::NOT_YET, cx);
-    }
-
-    pub fn text_boxes(_bgra: &[u8], _width: u32, _height: u32) -> Result<Vec<(f32, f32, f32, f32)>, String> {
-        Ok(Vec::new())
-    }
-
-    pub fn languages() -> &'static [(String, String)] {
-        &[]
-    }
-
-    pub fn warm_up(_cx: &App) {}
-}
+pub mod ocr;
