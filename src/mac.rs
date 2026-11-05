@@ -10,8 +10,8 @@ use gpui_kit::Window;
 use objc2::runtime::ProtocolObject;
 use objc2::AnyThread;
 use objc2_app_kit::{
-    NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSFont, NSFontAttributeName, NSFontWeightRegular, NSForegroundColorAttributeName, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
-    NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSStringDrawing, NSStrokeColorAttributeName, NSStrokeWidthAttributeName, NSView,
+    NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
+    NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSStringDrawing, NSView,
     NSWindowStyleMask,
 };
 use objc2_core_foundation::{
@@ -28,7 +28,7 @@ use objc2_core_text::{
     CTFont, CTFontUIFontType, CTLine, kCTFontAttributeName,
     kCTForegroundColorFromContextAttributeName,
 };
-use objc2_foundation::{NSArray, NSData, NSDictionary, NSError, NSNumber, NSString, NSURL};
+use objc2_foundation::{NSArray, NSData, NSDictionary, NSError, NSString, NSURL};
 use objc2_screen_capture_kit::SCScreenshotManager;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -341,27 +341,28 @@ fn numbered_cursor(window_pick: bool, numbers: Option<[i32; 2]>) -> Option<objc2
         Some(numbers) => {
             let (image, hot) = (base.image(), base.hotSpot());
             let lines = numbers.map(|n| NSString::from_str(&n.to_string()));
-            let font = NSFont::monospacedDigitSystemFontOfSize_weight(12., unsafe { NSFontWeightRegular });
-            let attrs = |stroke: Option<f64>| {
-                let (keys, color, width) = match stroke {
-                    Some(w) => (unsafe { [NSFontAttributeName, NSStrokeColorAttributeName, NSStrokeWidthAttributeName] }, NSColor::colorWithWhite_alpha(1., 0.9), w),
-                    None => (unsafe { [NSFontAttributeName, NSForegroundColorAttributeName, NSStrokeWidthAttributeName] }, NSColor::blackColor(), 0.),
-                };
-                let width = NSNumber::new_f64(width);
-                NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(&keys, &[font.as_ref(), color.as_ref(), width.as_ref()])
+            // Metrics of the macOS ⇧⌘4 cursor, matched pixel for pixel: 9 pt digits with a white copy 1 pt down-right.
+            let font = NSFont::systemFontOfSize(9.);
+            let attrs = |color: objc2::rc::Retained<NSColor>| unsafe {
+                NSDictionary::<NSString, objc2::runtime::AnyObject>::from_slices(
+                    &[NSFontAttributeName, NSForegroundColorAttributeName],
+                    &[font.as_ref(), color.as_ref()],
+                )
             };
-            let (halo, fill) = (attrs(Some(18.)), attrs(None));
-            let size = CGSize::new(image.size().width.max(hot.x + 52.), image.size().height.max(hot.y + 34.));
+            let (shadow, fill) = (attrs(NSColor::whiteColor()), attrs(NSColor::blackColor()));
+            let size = CGSize::new(image.size().width.max(hot.x + 49.), image.size().height.max(hot.y + 25.));
             let draw = RcBlock::new(move |_: CGRect| -> objc2::runtime::Bool {
+                // ⇧⌘4 also edges its crosshair in faint white, so it shows on dark content.
+                NSColor::colorWithWhite_alpha(1., 0.1).setFill();
+                let edge = objc2_app_kit::NSBezierPath::bezierPath();
+                edge.appendBezierPathWithRect(CGRect::new(CGPoint::new(hot.x - 12., hot.y - 1.), CGSize::new(25., 3.)));
+                edge.appendBezierPathWithRect(CGRect::new(CGPoint::new(hot.x - 1., hot.y - 12.), CGSize::new(3., 25.)));
+                edge.fill();
                 image.drawInRect(CGRect::new(CGPoint::ZERO, image.size()));
-                // Mitered joins would leave white spikes on the sharp corners of 2, 4 and 7.
-                if let Some(context) = objc2_app_kit::NSGraphicsContext::currentContext() {
-                    CGContext::set_line_join(Some(&context.CGContext()), objc2_core_graphics::CGLineJoin::Round);
-                }
                 for (i, line) in lines.iter().enumerate() {
-                    let at = CGPoint::new(hot.x + 10., hot.y + 3. + 13. * i as f64);
+                    let at = CGPoint::new(hot.x + 7., hot.y + 0.8 + 9. * i as f64);
                     unsafe {
-                        line.drawAtPoint_withAttributes(at, Some(&halo));
+                        line.drawAtPoint_withAttributes(CGPoint::new(at.x + 1., at.y + 1.), Some(&shadow));
                         line.drawAtPoint_withAttributes(at, Some(&fill));
                     }
                 }
