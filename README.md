@@ -25,7 +25,10 @@
 <br>
 
 <p align="center">
-  <img src="docs/assets/editor.png" width="800" alt="The Kiri editor with an arrow, a rectangle, and numbered counters on a screenshot">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/editor-dark.png">
+    <img src="docs/assets/editor.png" width="800" alt="The Kiri editor with an arrow, a rectangle, and numbered counters on a screenshot">
+  </picture>
 </p>
 
 Kiri captures an area, a window, a screen, or a page that scrolls, and opens it in an editor for arrows, text, blur, and measurements. Press ⇧⌘2, drag, then press Esc, and the image is on the clipboard.
