@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.5] - 2026-11-05
+
+### Fixed
+- Capture Area no longer flashes a gray screen when it opens.
+
 ## [0.1.0-beta.4] - 2026-11-05
 
 ### Fixed
