@@ -2,6 +2,14 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.8] - 2026-11-05
+
+### Added
+- Backdrop → Image → Wallpaper puts the screenshot on your current desktop picture.
+
+### Changed
+- Capture Area selects the same way as the macOS ⇧⌘4. Settings → Capture → Selection → Kiri brings back Kiri's own selection, with arrow keys, Repeat Area Capture, and Freeze the screen. If Freeze the screen was on, Kiri's selection stays.
+
 ## [0.1.0-beta.7] - 2026-11-05
 
 ### Fixed
