@@ -834,6 +834,12 @@ impl Render for SettingsWindow {
             .right_0()
             .h(px(44.))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move());
+        #[cfg(windows)]
+        let titlebar = titlebar
+            .window_control_area(WindowControlArea::Drag)
+            .flex()
+            .justify_end()
+            .child(crate::mac::caption_buttons(window, cx));
 
         h_flex()
             .relative()

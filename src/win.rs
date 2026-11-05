@@ -283,6 +283,41 @@ pub fn resize_from_top(window: &Window, w: f32, h: f32) {
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) };
 }
 
+/// Minimize, maximize, and close for a window that draws its own title bar. Windows runs
+/// their clicks and snap layouts from the areas they mark, as it does for its own.
+pub fn caption_buttons(window: &Window, cx: &gpui_kit::App) -> impl gpui_kit::IntoElement {
+    use gpui_kit::component::ActiveTheme;
+    use gpui_kit::*;
+    let (fg, hover) = (cx.theme().foreground, cx.theme().secondary_hover);
+    let button = |area: WindowControlArea, glyph: &'static str| {
+        let close = matches!(area, WindowControlArea::Close);
+        div()
+            .id(glyph)
+            .w(px(46.))
+            .h_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .font_family("Segoe MDL2 Assets")
+            .text_size(px(10.))
+            .text_color(fg)
+            .hover(move |s| if close { s.bg(rgb(0xC42B1C)).text_color(white()) } else { s.bg(hover) })
+            .window_control_area(area)
+            .child(glyph)
+    };
+    let max = if window.is_maximized() { "\u{E923}" } else { "\u{E922}" };
+    // Occluding keeps a drag area underneath from claiming the buttons' clicks.
+    div()
+        .id("caption-buttons")
+        .occlude()
+        .flex()
+        .flex_none()
+        .h_full()
+        .child(button(WindowControlArea::Min, "\u{E921}"))
+        .child(button(WindowControlArea::Max, max))
+        .child(button(WindowControlArea::Close, "\u{E8BB}"))
+}
+
 /// The `HWND`, which is what a context menu needs here.
 pub fn ns_view_ptr(window: &Window) -> Option<*const c_void> {
     hwnd(window).map(|h| h.0 as *const c_void)

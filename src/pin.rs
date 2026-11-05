@@ -274,6 +274,7 @@ impl Render for Pin {
             .on_action(cx.listener(|this, _: &ClosePin, w, cx| this.close(w, cx)))
             .on_action(cx.listener(|this, _: &EditPin, w, cx| this.edit(w, cx)))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
+            .when(cfg!(windows), |d| d.window_control_area(WindowControlArea::Drag))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, e: &MouseDownEvent, window, _| this.show_menu(e.position, window)),
@@ -310,6 +311,7 @@ impl Render for Pin {
                         .gap(px(1.))
                         .rounded(px(7.))
                         .bg(black().opacity(0.62))
+                        .when(cfg!(windows), |d| d.occlude())
                         .child(tool("close", IconName::X).on_click(cx.listener(|this, _, w, cx| this.close(w, cx))))
                         .child(
                             tool("drag", IconName::GripVertical)

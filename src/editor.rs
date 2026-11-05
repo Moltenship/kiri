@@ -2676,7 +2676,7 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &ToggleBackdrop, w, cx| {
                 crate::backdrop::toggle(this, w, cx);
             }))
-            .child(div().flex_none().child(self.render_toolbar(cx)))
+            .child(div().flex_none().child(self.render_toolbar(window, cx)))
             .child(
                 h_flex()
                     .flex_1()
@@ -2705,7 +2705,7 @@ impl Editor {
         cx.notify();
     }
 
-    fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_toolbar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let divider = || div().w(px(1.)).h(px(20.)).mx_1().bg(cx.theme().border);
         let icon_button = |id: &'static str, icon: IconName, tip: &'static str, action: Box<dyn Action>| {
@@ -2797,7 +2797,7 @@ impl Editor {
                 .child(div().text_xs().text_color(cx.theme().muted_foreground).child(caption))
         };
 
-        h_flex()
+        let bar = h_flex()
             .h(px(TOOLBAR_H))
             .flex_none()
             .pl(px(86.))
@@ -2862,7 +2862,8 @@ impl Editor {
                 div()
                     .flex_1()
                     .h_full()
-                    .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move()),
+                    .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
+                    .when(cfg!(windows), |d| d.window_control_area(WindowControlArea::Drag)),
             )
             .child(
                 h_flex()
@@ -2950,7 +2951,12 @@ impl Editor {
                             .on_click(cx.listener(|this, _, _, cx| this.fit_all(cx)))
                             .child(stat(format!("{zoom_pct}%"), "Zoom")),
                     ),
-            )
+            );
+        #[cfg(windows)]
+        let bar = bar.pl_3().pr_0().child(div().w_4()).child(mac::caption_buttons(window, cx));
+        #[cfg(not(windows))]
+        let _ = window;
+        bar
     }
 
     fn render_props(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
