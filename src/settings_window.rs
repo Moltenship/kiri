@@ -21,6 +21,24 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("cmd-w", CloseSettings, Some("SettingsWindow"))]);
 }
 
+/// macOS's own shortcuts, read again whenever the settings window comes forward, since
+/// they change in System Settings.
+#[derive(Default)]
+pub struct SystemShortcuts(pub Vec<crate::mac::SystemShortcut>);
+
+impl Global for SystemShortcuts {}
+
+pub fn refresh_system_shortcuts(cx: &mut App) {
+    cx.set_global(SystemShortcuts(crate::mac::system_shortcuts()));
+}
+
+/// "Turn off ⇧⌘4 in Keyboard Shortcuts › Screenshots", when macOS has `keys` too.
+pub fn system_conflict(keys: &str, cx: &App) -> Option<String> {
+    let all = &cx.try_global::<SystemShortcuts>()?.0;
+    let taken = crate::mac::system_shortcut(all, keys)?;
+    Some(format!("Turn off {} in Keyboard Shortcuts › {}", pretty(keys), taken.section))
+}
+
 pub struct Open(pub AnyWindowHandle);
 
 impl Global for Open {}
@@ -63,11 +81,12 @@ pub struct SettingsWindow {
     search: Entity<InputState>,
     solid: Entity<ColorPickerState>,
     file_name: Entity<InputState>,
-    _subscriptions: [Subscription; 5],
+    _subscriptions: [Subscription; 6],
 }
 
 impl SettingsWindow {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        refresh_system_shortcuts(cx);
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings…"));
         let template = settings::get(cx).file_name.clone();
         let file_name = cx.new(|cx| InputState::new(window, cx).default_value(template).placeholder(settings::FILE_NAME));
@@ -88,6 +107,12 @@ impl SettingsWindow {
                     this.solid.update(cx, |picker, cx| picker.set_value(rgb(s.window_background_color), window, cx));
                 }
                 cx.notify();
+            }),
+            cx.observe_window_activation(window, |_, window, cx| {
+                if window.is_window_active() {
+                    refresh_system_shortcuts(cx);
+                    cx.notify();
+                }
             }),
             cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()),
             cx.subscribe(&file_name, |_, input, e: &InputEvent, cx| {
@@ -128,6 +153,8 @@ struct Group {
 struct Row {
     title: SharedString,
     description: Option<SharedString>,
+    /// The description is a problem to fix.
+    alert: bool,
     control: AnyElement,
     disabled: bool,
 }
@@ -137,12 +164,18 @@ fn group(title: impl Into<Option<&'static str>>, rows: impl IntoIterator<Item = 
 }
 
 fn row(title: impl Into<SharedString>, control: impl IntoElement) -> Row {
-    Row { title: title.into(), description: None, control: control.into_any_element(), disabled: false }
+    Row { title: title.into(), description: None, alert: false, control: control.into_any_element(), disabled: false }
 }
 
 impl Row {
     fn description(mut self, text: impl Into<SharedString>) -> Self {
         self.description = Some(text.into());
+        self
+    }
+
+    fn alert(mut self, text: impl Into<SharedString>) -> Self {
+        self.description = Some(text.into());
+        self.alert = true;
         self
     }
 
@@ -274,7 +307,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                     row("Launch at login", login),
                     row("Appearance", appearance_picker(64., cx)),
                     row("Check for updates automatically", toggle("updates", |s| s.auto_update, |s, v| s.auto_update = v, cx))
-                        .description(format!("Downloads new versions from GitHub and installs them when Kiri quits. This is {}.", env!("CARGO_PKG_VERSION"))),
+                        .description(format!("Checks GitHub once a day. A red dot on the menu bar icon means a new version is out. This is {}.", env!("CARGO_PKG_VERSION"))),
                 ],
             ),
             group(
@@ -406,6 +439,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
             if let Err(err) = crate::mac::release_screenshot_keys() {
                 crate::toast::show(format!("Couldn't turn off the macOS shortcuts: {err}"), cx);
             }
+            refresh_system_shortcuts(cx);
             settings::update(cx, |s| {
                 s.hotkeys.insert(Capture::Fullscreen, Some("shift+cmd+3".into()));
                 s.hotkeys.insert(Capture::Area, Some("shift+cmd+4".into()));
@@ -415,7 +449,36 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
             }
             crate::refresh_tray(cx);
         }));
-    let keys = Capture::ALL.into_iter().map(|capture| row(capture.label(), recorder(capture, window, cx))).collect::<Vec<_>>();
+    let all = cx.try_global::<SystemShortcuts>().map(|s| s.0.clone()).unwrap_or_default();
+    let keys = Capture::ALL
+        .into_iter()
+        .map(|capture| {
+            let taken = settings::get(cx).hotkey(capture).and_then(|keys| Some((crate::mac::system_shortcut(&all, &keys)?.clone(), keys)));
+            let recorder = recorder(capture, window, cx);
+            match taken {
+                None => row(capture.label(), recorder),
+                Some((taken, keys)) => row(
+                    capture.label(),
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new(("open-keyboard", capture as usize))
+                                .label("Open Settings")
+                                .outline()
+                                .small()
+                                .on_click(|_, _, cx| cx.open_url(KEYBOARD_SETTINGS)),
+                        )
+                        .child(recorder),
+                )
+                .alert(format!(
+                    "macOS uses {} for “{}”. Turn it off in Keyboard Shortcuts › {}.",
+                    pretty(&keys),
+                    taken.name,
+                    taken.section
+                )),
+            }
+        })
+        .collect::<Vec<_>>();
     Page {
         title: "Hotkeys",
         icon: IconName::Command,
@@ -433,7 +496,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
     }
 }
 
-const KEYBOARD_SETTINGS: &str = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension";
+pub const KEYBOARD_SETTINGS: &str = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts";
 
 struct Recorder {
     focus: FocusHandle,
@@ -448,17 +511,6 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
         let restore = cx.on_focus_out(&focus, window, move |_, _, _, cx| {
             for keys in crate::reload_hotkeys(cx) {
                 crate::toast::show(format!("{} is taken by another app", pretty(&keys)), cx);
-            }
-            // macOS keeps these even when Kiri registers them, so the system screenshot UI wins.
-            if let Some(keys) = settings::get(cx).hotkey(capture)
-                && ["shift+cmd+3", "shift+cmd+4", "shift+cmd+5"].contains(&keys.as_str())
-            {
-                crate::toast::with_action(
-                    format!("Turn off {} in Keyboard Shortcuts › Screenshots", pretty(&keys)),
-                    "Open",
-                    |cx| cx.open_url(KEYBOARD_SETTINGS),
-                    cx,
-                );
             }
             crate::refresh_tray(cx);
         });
@@ -775,7 +827,9 @@ fn card(i: usize, title: Option<SharedString>, group: Group, theme: &gpui_kit::c
                     .flex_1()
                     .min_w_0()
                     .child(div().text_sm().child(row.title))
-                    .when_some(row.description, |s, d| s.child(div().text_xs().text_color(theme.muted_foreground).child(d))),
+                    .when_some(row.description, |s, d| {
+                        s.child(div().text_xs().text_color(if row.alert { theme.danger } else { theme.muted_foreground }).child(d))
+                    }),
             )
             .child(
                 div()

@@ -34,7 +34,7 @@ use global_hotkey::hotkey::{Code, HotKey};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui_kit::component::Theme;
 use gpui_kit::*;
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use tray_icon::menu::{CheckMenuItem, IconMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
 use crate::settings::Capture;
@@ -330,8 +330,11 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
 }
 
 /// Same order as the alternative: the frequent captures on top, the rest under "More".
-fn tray_menu(s: &settings::Settings, ready: Option<&str>) -> Menu {
-    let update_label = ready.map_or("Check for Updates…".to_string(), |v| format!("Restart to Update to {v}"));
+fn tray_menu(s: &settings::Settings, available: Option<&str>) -> Menu {
+    let update = match available {
+        Some(version) => IconMenuItem::with_id("update", format!("Update to Kiri {version}…"), true, Some(red_dot()), None),
+        None => IconMenuItem::with_id("update", "Check for Updates…", true, None, None),
+    };
     let item = |c: Capture| {
         let accel = s.hotkey(c).and_then(|k| k.parse().ok());
         MenuItem::with_id(format!("{c:?}"), c.label(), true, accel)
@@ -373,16 +376,20 @@ fn tray_menu(s: &settings::Settings, ready: Option<&str>) -> Menu {
         &PredefinedMenuItem::separator(),
         &CheckMenuItem::with_id("login", "Launch at Login", true, settings::launch_at_login(), None),
         &item(Capture::Settings),
-        &MenuItem::with_id("update", update_label, true, None),
+        &update,
         &MenuItem::with_id("quit", "Quit Kiri", true, None),
     ]);
     menu
 }
 
 pub fn refresh_tray(cx: &mut App) {
-    let ready = cx.try_global::<update::Update>().and_then(|u| u.ready.as_ref()).map(|(v, _)| v.clone());
-    let menu = tray_menu(settings::get(cx), ready.as_deref());
-    cx.global::<Resident>().tray.set_menu(Some(Box::new(menu)));
+    let available = cx.try_global::<update::Update>().and_then(|u| u.available.as_ref()).map(|(v, _)| v.clone());
+    let menu = tray_menu(settings::get(cx), available.as_deref());
+    let tray = &cx.global::<Resident>().tray;
+    tray.set_menu(Some(Box::new(menu)));
+    if let Some(item) = tray.ns_status_item() {
+        mac::set_tray_badge(&item, available.is_some());
+    }
 }
 
 pub fn open_file(cx: &mut App) {
@@ -485,8 +492,8 @@ fn handle(command: Command, cx: &mut App) {
         Command::Menu(id) => {
             pin::menu_event(&id, cx);
         }
-        Command::CheckForUpdates => match cx.default_global::<update::Update>().ready.is_some() {
-            true => update::restart(cx),
+        Command::CheckForUpdates => match cx.default_global::<update::Update>().available.is_some() {
+            true => update::install(cx),
             false => update::check(true, cx),
         },
         Command::Quit => cx.quit(),
@@ -758,6 +765,28 @@ fn stress_image(w: u32, h: u32) -> TiledImage {
 
 /// Viewfinder corners, drawn at 2× for the 18 pt menu bar slot.
 /// The app icon reduced to a template: a selection with handles around a peak and the sun.
+/// The update item's mark, matching the dot on the menu bar icon.
+fn red_dot() -> tray_icon::menu::Icon {
+    let n = 32;
+    let mut pixmap = tiny_skia::Pixmap::new(n, n).expect("dot pixmap");
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color_rgba8(255, 59, 48, 255);
+    paint.anti_alias = true;
+    if let Some(dot) = tiny_skia::PathBuilder::from_circle(16., 16., 7.) {
+        pixmap.fill_path(&dot, &paint, tiny_skia::FillRule::Winding, tiny_skia::Transform::identity(), None);
+    }
+    // Premultiplied to straight alpha; the edge pixels are the only partly transparent ones.
+    let mut rgba = pixmap.take();
+    for px in rgba.chunks_exact_mut(4) {
+        if let a @ 1..=254 = px[3] {
+            for c in &mut px[..3] {
+                *c = (*c as u32 * 255 / a as u32) as u8;
+            }
+        }
+    }
+    tray_icon::menu::Icon::from_rgba(rgba, n, n).expect("dot icon")
+}
+
 fn tray_glyph() -> tray_icon::Icon {
     use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
     let n = 36;

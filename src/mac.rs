@@ -78,6 +78,122 @@ pub fn release_screenshot_keys() -> std::io::Result<()> {
     Ok(())
 }
 
+/// A macOS shortcut from System Settings → Keyboard → Keyboard Shortcuts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SystemShortcut {
+    pub name: String,
+    /// The section of Keyboard Shortcuts that lists it, as "Screenshots".
+    pub section: String,
+    character: u64,
+    modifiers: u64,
+}
+
+const SHIFT: u64 = 0x20000;
+const CONTROL: u64 = 0x40000;
+const OPTION: u64 = 0x80000;
+const COMMAND: u64 = 0x100000;
+/// The defaults Keyboard settings shows, with names. Missing on other macOS versions, which
+/// leaves only the shortcuts the user changed.
+const SHORTCUTS_TABLE: &str =
+    "/System/Library/ExtensionKit/Extensions/KeyboardSettings.appex/Contents/Resources/en.lproj/DefaultShortcutsTable.xml";
+
+/// The macOS shortcuts that are on: the system defaults, as changed in `com.apple.symbolichotkeys`.
+pub fn system_shortcuts() -> Vec<SystemShortcut> {
+    use serde_json::Value;
+    use std::process::{Command, Stdio};
+    fn json(plist: &[u8]) -> Option<Value> {
+        use std::io::Write;
+        let mut plutil = Command::new("/usr/bin/plutil")
+            .args(["-convert", "json", "-o", "-", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .ok()?;
+        plutil.stdin.take()?.write_all(plist).ok()?;
+        serde_json::from_slice(&plutil.wait_with_output().ok()?.stdout).ok()
+    }
+    // id → (on, character, modifiers, name, section)
+    let mut all = std::collections::BTreeMap::new();
+    fn walk(elements: &[Value], section: &str, all: &mut std::collections::BTreeMap<u64, (bool, u64, u64, String, String)>) {
+        for e in elements {
+            if let Some(children) = e["elements"].as_array() {
+                walk(children, section, all);
+            }
+            // Apple's spelling.
+            let (Some(id), Some(character), Some(modifiers)) = (e["sybmolichotkey"].as_u64(), e["charKey"].as_u64(), e["modifier"].as_u64()) else {
+                continue;
+            };
+            let name = e["name"].as_str().unwrap_or_default().trim_start_matches("DO_NOT_LOCALIZE: ").to_string();
+            all.insert(id, (e["enabled"].as_bool().unwrap_or(true), character, modifiers, name, section.to_string()));
+        }
+    }
+    if let Some(Value::Array(sections)) = std::fs::read(SHORTCUTS_TABLE).ok().and_then(|xml| json(&xml)) {
+        for section in &sections {
+            let name = section["name"].as_str().unwrap_or_default().trim_start_matches("DO_NOT_LOCALIZE: ");
+            walk(section["elements"].as_array().map_or(&[][..], |v| v), name, &mut all);
+        }
+    }
+    let changed = Command::new("/usr/bin/defaults").args(["export", "com.apple.symbolichotkeys", "-"]).output().ok().and_then(|o| json(&o.stdout));
+    if let Some(Value::Object(changed)) = changed.as_ref().map(|v| &v["AppleSymbolicHotKeys"]) {
+        for (id, entry) in changed {
+            let Ok(id) = id.parse::<u64>() else { continue };
+            let slot = all.entry(id).or_insert_with(|| (false, 0, 0, "a macOS shortcut".into(), String::new()));
+            slot.0 = entry["enabled"].as_bool().or_else(|| entry["enabled"].as_u64().map(|n| n != 0)).unwrap_or(slot.0);
+            let parameters = &entry["value"]["parameters"];
+            if let (Some(character), Some(modifiers)) = (parameters[0].as_u64(), parameters[2].as_u64()) {
+                (slot.1, slot.2) = (character, modifiers);
+            }
+        }
+    }
+    all.into_values()
+        .filter(|(on, character, ..)| *on && !matches!(character, 0 | 65535))
+        .map(|(_, character, modifiers, name, section)| SystemShortcut { name, section, character, modifiers })
+        .collect()
+}
+
+/// The macOS shortcut on `keys`, written as Kiri stores hotkeys ("shift+cmd+4").
+pub fn system_shortcut<'a>(all: &'a [SystemShortcut], keys: &str) -> Option<&'a SystemShortcut> {
+    let mut modifiers = 0;
+    let mut character = None;
+    for part in keys.split('+') {
+        match part {
+            "shift" => modifiers |= SHIFT,
+            "ctrl" => modifiers |= CONTROL,
+            "alt" => modifiers |= OPTION,
+            "cmd" => modifiers |= COMMAND,
+            "space" => character = Some(32),
+            key if key.len() == 1 => character = Some(key.to_ascii_lowercase().as_bytes()[0] as u64),
+            _ => return None,
+        }
+    }
+    let character = character?;
+    // 0x200000 marks keypad and arrow keys; fn (0x800000) stays, as Kiri can't take fn shortcuts.
+    all.iter().find(|s| s.character == character && s.modifiers & !0x200000 == modifiers)
+}
+
+/// A red dot on the menu bar icon's top right corner, over the frame's handle.
+pub fn set_tray_badge(item: &objc2_app_kit::NSStatusItem, on: bool) {
+    const TAG: isize = 0x6b697269;
+    let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+    let Some(button) = item.button(mtm) else { return };
+    if let Some(old) = button.viewWithTag(TAG) {
+        old.removeFromSuperview();
+    }
+    let Some(dot) = on.then(|| NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str("circle.fill"), Some(&NSString::from_str("Update available")))).flatten() else {
+        return;
+    };
+    // The icon is 22 pt square, centered; its frame's corner sits at (0.9, 0.16) of it.
+    let (bounds, d) = (button.bounds(), 7.);
+    let (x, top) = ((bounds.size.width - 22.) / 2. + 19.8, (bounds.size.height - 22.) / 2. + 3.5);
+    let y = if button.isFlipped() { top - d / 2. } else { bounds.size.height - top - d / 2. };
+    let view = NSImageView::imageViewWithImage(&dot, mtm);
+    view.setFrame(CGRect::new(CGPoint::new(x - d / 2., y), CGSize::new(d, d)));
+    view.setImageScaling(objc2_app_kit::NSImageScaling::ScaleProportionallyUpOrDown);
+    view.setContentTintColor(Some(&NSColor::systemRedColor()));
+    view.setTag(TAG);
+    button.addSubview(&view);
+}
+
 pub fn ensure_screen_access() -> bool {
     CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
 }
@@ -533,4 +649,22 @@ pub fn text_image(text: &str, size: f32, line_height: f32, rgb: u32, bold: bool)
     unsafe { line.draw(&ctx) };
     drop(ctx);
     Some((w as u32, h as u32, buf))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SystemShortcut, system_shortcut};
+
+    #[test]
+    fn hotkeys_match_system_shortcuts_by_character_and_modifiers() {
+        let area = SystemShortcut { name: "Save picture of selected area as a file".into(), section: "Screenshots".into(), character: 52, modifiers: 0x120000 };
+        let spotlight = SystemShortcut { name: "Show Spotlight search".into(), section: "Spotlight".into(), character: 32, modifiers: 0x100000 };
+        let all = [area.clone(), spotlight.clone()];
+        assert_eq!(system_shortcut(&all, "shift+cmd+4"), Some(&area));
+        assert_eq!(system_shortcut(&all, "cmd+space"), Some(&spotlight));
+        assert_eq!(system_shortcut(&all, "ctrl+shift+cmd+4"), None);
+        assert_eq!(system_shortcut(&all, "shift+cmd+f4"), None);
+        let fill = SystemShortcut { name: "Fill".into(), section: "Windows".into(), character: 102, modifiers: 0x840000 };
+        assert_eq!(system_shortcut(&[fill], "ctrl+f"), None);
+    }
 }

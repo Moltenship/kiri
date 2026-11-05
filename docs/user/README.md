@@ -15,6 +15,8 @@ The first launch walks through Screen Recording access, the capture shortcuts, a
 
 To capture with ⇧⌘3 and ⇧⌘4 instead, pick Instead of macOS on first launch, or Use ⇧⌘3 and ⇧⌘4 in Settings → Hotkeys. Kiri turns those two shortcuts off in macOS; ⇧⌘5 still opens the macOS screenshot toolbar. To get them back, turn them on in System Settings → Keyboard → Keyboard Shortcuts → Screenshots.
 
+When a shortcut you give Kiri is also a macOS shortcut, macOS gets it first. Settings → Hotkeys marks that shortcut in red, names the macOS shortcut and where it is, and Open Settings takes you to Keyboard Shortcuts to turn it off.
+
 ## After a capture
 
 A capture opens the editor or a small thumbnail (Settings → General). It can also be copied or saved at once. Drag the thumbnail into another app to drop the file there.
@@ -50,4 +52,4 @@ Kiri can record your screen, so it won't take a capture for another app until yo
 
 ## Updates
 
-Kiri checks GitHub for a new version once a day, downloads it in the background, and installs it when you quit. To install right away, choose Restart to Update in the menu bar; Check for Updates… checks now. Settings → General turns automatic checks off.
+Kiri checks GitHub for a new version once a day. When one is out, a red dot appears on the menu bar icon. Choose Update to Kiri <version>… in its menu to download it and restart into it. Check for Updates… checks right away, and Settings → General turns the daily check off.

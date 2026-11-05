@@ -37,7 +37,7 @@ Kiri captures an area, a window, a screen, or a page that scrolls, and opens it 
 
 Kiri then lives in the menu bar. Scrolling capture asks for Accessibility the first time you use it.
 
-Kiri needs macOS 15.2 or later on Apple Silicon. It updates itself from GitHub releases, and Settings → General turns that off.
+Kiri needs macOS 15.2 or later on Apple Silicon. When a new release is out, a red dot appears on the menu bar icon, and its menu installs the update.
 
 ## Shortcuts
 

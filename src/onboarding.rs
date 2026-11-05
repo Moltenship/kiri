@@ -79,6 +79,10 @@ impl Onboarding {
         if replace && let Err(err) = crate::mac::release_screenshot_keys() {
             crate::toast::show(format!("Couldn't turn off the macOS shortcuts: {err}"), cx);
         }
+        crate::settings_window::refresh_system_shortcuts(cx);
+        if let Some(fix) = [screen, area].into_iter().find_map(|keys| crate::settings_window::system_conflict(keys, cx)) {
+            crate::toast::with_action(fix, "Open", |cx| cx.open_url(crate::settings_window::KEYBOARD_SETTINGS), cx);
+        }
         for keys in crate::reload_hotkeys(cx) {
             crate::toast::show(format!("{} is taken by another app", crate::settings_window::pretty(&keys)), cx);
         }

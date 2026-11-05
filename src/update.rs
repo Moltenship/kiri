@@ -1,5 +1,5 @@
-//! Updates from GitHub releases: a daily check downloads a newer `Kiri.zip`, verifies its
-//! signature, and swaps the bundle on quit or on Restart to Update.
+//! Updates from GitHub releases: a daily check marks the menu bar icon when a newer release is
+//! out, and Update downloads it, verifies its signature, swaps the bundle, and relaunches.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -15,9 +15,9 @@ const REQUIREMENT: &str =
 
 #[derive(Default)]
 pub struct Update {
-    checking: bool,
-    /// A verified bundle waiting in the cache, and its version.
-    pub ready: Option<(String, PathBuf)>,
+    busy: bool,
+    /// The newest release above this build: its version and the download URL.
+    pub available: Option<(String, String)>,
 }
 
 impl Global for Update {}
@@ -33,13 +33,6 @@ pub fn start(cx: &mut App) {
     if bundle().is_none() {
         return;
     }
-    cx.on_app_quit(|cx| {
-        if let Some((_, staged)) = cx.global::<Update>().ready.clone() {
-            let _ = install(&staged);
-        }
-        async {}
-    })
-    .detach();
     cx.spawn(async |cx| {
         cx.background_executor().timer(Duration::from_secs(10)).await;
         loop {
@@ -52,6 +45,7 @@ pub fn start(cx: &mut App) {
     .detach();
 }
 
+/// Looks for a newer release. Only a check from the menu reports what it found in a toast.
 pub fn check(manual: bool, cx: &mut App) {
     let Some(app) = bundle() else {
         if manual {
@@ -65,26 +59,21 @@ pub fn check(manual: bool, cx: &mut App) {
         }
         return;
     }
-    let update = cx.default_global::<Update>();
-    if let Some((version, _)) = &update.ready {
-        if manual {
-            let version = version.clone();
-            ready_toast(&version, cx);
-        }
-        return;
-    }
-    if std::mem::replace(&mut update.checking, true) {
+    if std::mem::replace(&mut cx.default_global::<Update>().busy, true) {
         return;
     }
     cx.spawn(async move |cx| {
-        let found = cx.background_executor().spawn(async move { fetch() }).await;
+        let found = cx.background_executor().spawn(async move { latest() }).await;
         cx.update(|cx| {
-            cx.global_mut::<Update>().checking = false;
+            cx.global_mut::<Update>().busy = false;
             match found {
-                Ok(Some((version, staged))) => {
-                    cx.global_mut::<Update>().ready = Some((version.clone(), staged));
+                Ok(Some(release)) => {
+                    let version = release.0.clone();
+                    cx.global_mut::<Update>().available = Some(release);
                     crate::refresh_tray(cx);
-                    ready_toast(&version, cx);
+                    if manual {
+                        crate::toast::with_action(format!("Kiri {version} is available"), "Update", install, cx);
+                    }
                 }
                 Ok(None) if manual => crate::toast::show(format!("Kiri {} is the latest", env!("CARGO_PKG_VERSION")), cx),
                 Err(err) if manual => crate::toast::show(format!("Couldn't check for updates: {err}"), cx),
@@ -96,27 +85,34 @@ pub fn check(manual: bool, cx: &mut App) {
     .detach();
 }
 
-fn ready_toast(version: &str, cx: &mut App) {
-    crate::toast::with_action(format!("Kiri {version} is ready"), "Restart", restart, cx);
-}
-
-pub fn restart(cx: &mut App) {
-    let (Some(app), Some((_, staged))) = (bundle(), cx.global::<Update>().ready.clone()) else {
+/// Downloads the available release, swaps it in, and relaunches Kiri.
+pub fn install(cx: &mut App) {
+    let (Some(app), Some((version, url))) = (bundle(), cx.default_global::<Update>().available.clone()) else {
         return;
     };
-    if let Err(err) = install(&staged) {
-        crate::toast::show(format!("Couldn't update: {err}"), cx);
+    if std::mem::replace(&mut cx.global_mut::<Update>().busy, true) {
         return;
     }
-    cx.global_mut::<Update>().ready = None;
-    // `open` waits for this process to exit, or it would just activate the running copy.
-    let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.1; done; open \"$0\"", std::process::id());
-    let _ = Command::new("/bin/sh").args(["-c", &script]).arg(&app).spawn();
-    cx.quit();
+    crate::toast::show(format!("Downloading Kiri {version}…"), cx);
+    cx.spawn(async move |cx| {
+        let done = cx.background_executor().spawn(async move { download(&url).and_then(|staged| swap(&staged)) }).await;
+        cx.update(|cx| {
+            cx.global_mut::<Update>().busy = false;
+            if let Err(err) = done {
+                crate::toast::show(format!("Couldn't update: {err}"), cx);
+                return;
+            }
+            // `open` waits for this process to exit, or it would just activate the running copy.
+            let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.1; done; open \"$0\"", std::process::id());
+            let _ = Command::new("/bin/sh").args(["-c", &script]).arg(&app).spawn();
+            cx.quit();
+        });
+    })
+    .detach();
 }
 
-/// The newest release above this build, downloaded and verified; `None` when up to date.
-fn fetch() -> Result<Option<(String, PathBuf)>, String> {
+/// The newest release above this build, as its version and download URL; `None` when up to date.
+fn latest() -> Result<Option<(String, String)>, String> {
     #[derive(serde::Deserialize)]
     struct Release {
         tag_name: String,
@@ -130,7 +126,7 @@ fn fetch() -> Result<Option<(String, PathBuf)>, String> {
     }
     let body = run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", RELEASES]))?;
     let releases: Vec<Release> = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
-    let newest = releases
+    Ok(releases
         .into_iter()
         .filter(|r| !r.draft)
         .filter_map(|r| {
@@ -138,23 +134,25 @@ fn fetch() -> Result<Option<(String, PathBuf)>, String> {
             Some((r.tag_name.trim_start_matches('v').to_string(), url))
         })
         .filter(|(v, _)| newer(v, env!("CARGO_PKG_VERSION")))
-        .max_by(|a, b| if newer(&a.0, &b.0) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less });
-    let Some((version, url)) = newest else { return Ok(None) };
+        .max_by(|a, b| if newer(&a.0, &b.0) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }))
+}
 
+/// Downloads and unpacks `url`, and checks that Kiri's Developer ID signed it.
+fn download(url: &str) -> Result<PathBuf, String> {
     let dir = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Caches/Kiri/Update");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let zip = dir.join(ASSET);
-    run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "600", "-o"]).arg(&zip).arg(&url))?;
+    run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "600", "-o"]).arg(&zip).arg(url))?;
     run(Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(&zip).arg(&dir))?;
     let staged = dir.join("Kiri.app");
     run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict", "-R", REQUIREMENT]).arg(&staged))
         .map_err(|_| "the download isn't signed by Kiri".to_string())?;
-    Ok(Some((version, staged)))
+    Ok(staged)
 }
 
 /// Swaps the running bundle for `staged`. The old one goes back in place if the move fails.
-fn install(staged: &Path) -> Result<(), String> {
+fn swap(staged: &Path) -> Result<(), String> {
     let app = bundle().ok_or("not running from Kiri.app")?;
     let old = app.with_file_name(".Kiri.app.old");
     let _ = std::fs::remove_dir_all(&old);
