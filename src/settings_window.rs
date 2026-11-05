@@ -363,7 +363,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                     row("Save folder", folder).description(dir),
                     row("File name", Input::new(file_name).small().w(px(240.))).description(format!(
                         "Saves as “{}.png”. %Y, %m, %d, %H, %M, and %S fill in the time.",
-                        crate::mac::file_stem(&now.file_name)
+                        crate::settings::file_stem(&now.file_name)
                     )),
                     row("Save format", choice("format", SAVE_FORMATS, |s| s.save_auto_jpeg, |s, v| s.save_auto_jpeg = v, cx))
                         .description("Auto saves a JPEG when it is smaller, which suits photos. Transparent images stay PNG."),

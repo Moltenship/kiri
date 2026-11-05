@@ -1183,7 +1183,7 @@ impl Editor {
             None => (settings::get(cx).save_dir(), None),
         };
         let name = name.unwrap_or_else(|| {
-            let path = mac::timestamp_path(&dir, &settings::get(cx).file_name);
+            let path = crate::settings::timestamp_path(&dir, &settings::get(cx).file_name);
             path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
         });
         let rx = cx.prompt_for_new_path(&dir, Some(&name));
@@ -2445,7 +2445,7 @@ pub fn copy_later(encode: impl FnOnce() -> Vec<u8> + Send + 'static, cx: &App) {
 pub fn write_temp(png: &[u8], name: &str) -> Option<PathBuf> {
     let dir = std::env::temp_dir().join("Kiri");
     std::fs::create_dir_all(&dir).ok()?;
-    let path = mac::timestamp_path(&dir, name);
+    let path = crate::settings::timestamp_path(&dir, name);
     std::fs::write(&path, png).ok()?;
     Some(path)
 }

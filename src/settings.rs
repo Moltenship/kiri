@@ -194,6 +194,33 @@ fn oklch(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
 
 pub const FILE_NAME: &str = "Kiri %Y-%m-%d at %H.%M.%S";
 
+/// `Kiri 2026-11-04 at 14.05.09.png` in `dir`, the same shape macOS uses for screenshots.
+/// A second capture in the same second gets ` 2`, so neither overwrites the other. Names
+/// handed out are remembered, since a background save writes the file only later.
+pub fn timestamp_path(dir: &std::path::Path, template: &str) -> PathBuf {
+    static TAKEN: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+    let stem = file_stem(template);
+    let mut taken = TAKEN.lock().unwrap_or_else(|e| e.into_inner());
+    let path = (1..)
+        .map(|n| dir.join(if n == 1 { format!("{stem}.png") } else { format!("{stem} {n}.png") }))
+        .find(|p| !taken.contains(p) && ["png", "jpg", "jpeg", "gif"].iter().all(|ext| !p.with_extension(ext).exists()))
+        .expect("an unused name");
+    taken.push(path.clone());
+    path
+}
+
+/// `template` with strftime fields filled in, made safe for a file name.
+pub fn file_stem(template: &str) -> String {
+    let stem = crate::mac::strftime(template).replace(['/', ':'], "-");
+    // Room for " 99.jpeg" under the 255-byte name limit; a leading dot would hide the file.
+    let stem = stem.trim().trim_start_matches('.').trim_start();
+    let stem = &stem[..stem.floor_char_boundary(240)];
+    match stem {
+        "" if template != FILE_NAME => file_stem(FILE_NAME),
+        stem => stem.to_string(),
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -287,7 +314,7 @@ impl Default for Settings {
 
 impl Settings {
     pub fn save_path(&self) -> PathBuf {
-        crate::mac::timestamp_path(&self.save_dir(), &self.file_name)
+        timestamp_path(&self.save_dir(), &self.file_name)
     }
 
     pub fn save_dir(&self) -> PathBuf {
@@ -438,16 +465,16 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::Capture;
+    use super::{Capture, file_stem};
 
     #[test]
     fn file_names_fill_in_the_time_and_stay_valid() {
-        let year = crate::mac::file_stem("%Y");
+        let year = file_stem("%Y");
         assert!(year.len() == 4 && year.starts_with("20"), "{year}");
-        assert_eq!(crate::mac::file_stem("a/b:c"), "a-b-c");
-        assert!(crate::mac::file_stem("  ").starts_with("Kiri "));
-        assert_eq!(crate::mac::file_stem(".hidden"), "hidden");
-        assert_eq!(crate::mac::file_stem(&"é".repeat(200)).len(), 240);
+        assert_eq!(file_stem("a/b:c"), "a-b-c");
+        assert!(file_stem("  ").starts_with("Kiri "));
+        assert_eq!(file_stem(".hidden"), "hidden");
+        assert_eq!(file_stem(&"é".repeat(200)).len(), 240);
     }
 
     #[test]

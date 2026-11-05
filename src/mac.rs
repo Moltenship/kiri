@@ -629,36 +629,14 @@ pub fn mark_screenshot(path: &std::path::Path) {
     unsafe { libc::setxattr(file.as_ptr(), name.as_ptr(), TRUE_PLIST.as_ptr().cast(), TRUE_PLIST.len(), 0, 0) };
 }
 
-/// `Kiri 2026-11-04 at 14.05.09.png` in `dir`, the same shape macOS uses for screenshots.
-/// A second capture in the same second gets ` 2`, so neither overwrites the other. Names
-/// handed out are remembered, since a background save writes the file only later.
-pub fn timestamp_path(dir: &std::path::Path, template: &str) -> PathBuf {
-    static TAKEN: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
-    let stem = file_stem(template);
-    let mut taken = TAKEN.lock().unwrap_or_else(|e| e.into_inner());
-    let path = (1..)
-        .map(|n| dir.join(if n == 1 { format!("{stem}.png") } else { format!("{stem} {n}.png") }))
-        .find(|p| !taken.contains(p) && ["png", "jpg", "jpeg", "gif"].iter().all(|ext| !p.with_extension(ext).exists()))
-        .expect("an unused name");
-    taken.push(path.clone());
-    path
-}
-
-/// `template` with strftime fields filled in, made safe for a file name.
-pub fn file_stem(template: &str) -> String {
+/// `template` with strftime fields filled in.
+pub fn strftime(template: &str) -> String {
     let (now, mut tm) = (unsafe { libc::time(std::ptr::null_mut()) }, unsafe { std::mem::zeroed() });
     unsafe { libc::localtime_r(&now, &mut tm) };
     let mut buf = [0u8; 512];
     let format = std::ffi::CString::new(template.replace('\0', "")).unwrap_or_default();
     let n = unsafe { libc::strftime(buf.as_mut_ptr().cast(), buf.len(), format.as_ptr(), &tm) };
-    let stem = String::from_utf8_lossy(&buf[..n]).replace(['/', ':'], "-");
-    // Room for " 99.jpeg" under the 255-byte name limit; a leading dot would hide the file.
-    let stem = stem.trim().trim_start_matches('.').trim_start();
-    let stem = &stem[..stem.floor_char_boundary(240)];
-    match stem {
-        "" if template != crate::settings::FILE_NAME => file_stem(crate::settings::FILE_NAME),
-        stem => stem.to_string(),
-    }
+    String::from_utf8_lossy(&buf[..n]).into_owned()
 }
 
 fn ct_line(text: &str, size: f32, bold: bool) -> Option<CFRetained<CTLine>> {
