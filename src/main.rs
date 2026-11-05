@@ -313,8 +313,8 @@ fn main() {
             Some("stress") => Some(Command::StressTest),
             _ => None,
         };
-        // The welcome window walks through macOS permissions and shortcuts.
-        if first_launch && capture.is_none() && cfg!(target_os = "macos") {
+        // The welcome window walks through permissions and shortcuts.
+        if first_launch && capture.is_none() {
             let _ = tx.unbounded_send(Command::Welcome);
         }
         if let Some(demo) = demo {

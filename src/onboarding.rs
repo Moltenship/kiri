@@ -1,4 +1,4 @@
-//! The first-run window: Screen Recording, the capture shortcuts, and the look.
+//! The first-run window: Screen Recording on macOS, the capture shortcuts, and the look.
 
 use std::sync::Arc;
 
@@ -12,6 +12,10 @@ use crate::settings::{self, Capture};
 
 const STEPS: usize = 3;
 const SCREEN_RECORDING: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+
+/// Screen and Area hotkeys next to the system's screenshot keys, and in their place.
+const BESIDE: (&str, &str) = if cfg!(windows) { ("ctrl+shift+1", "ctrl+shift+2") } else { ("shift+cmd+1", "shift+cmd+2") };
+const INSTEAD: (&str, &str) = if cfg!(windows) { ("shift+printscreen", "printscreen") } else { ("shift+cmd+3", "shift+cmd+4") };
 
 struct Open(AnyWindowHandle);
 
@@ -44,7 +48,7 @@ pub fn open(cx: &mut App) {
 
 struct Onboarding {
     step: usize,
-    /// ⇧⌘3 and ⇧⌘4 instead of the macOS screenshots; applied by Done.
+    /// `INSTEAD` of the system's screenshot keys; applied by Done.
     replace_system: bool,
     screen_access: bool,
     icon: Arc<Image>,
@@ -62,7 +66,7 @@ impl Onboarding {
         let release = cx.on_release(|_, cx| settings::update(cx, |_| {}));
         Self {
             step: 0,
-            replace_system: settings::get(cx).hotkey(Capture::Area).as_deref() == Some("shift+cmd+4"),
+            replace_system: settings::get(cx).hotkey(Capture::Area).as_deref() == Some(INSTEAD.1),
             screen_access: crate::mac::has_screen_access(),
             icon: Arc::new(Image::from_bytes(ImageFormat::Png, include_bytes!("icon.png").to_vec())),
             _subscriptions: [activation, release],
@@ -71,13 +75,14 @@ impl Onboarding {
 
     fn finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let replace = self.replace_system;
-        let (screen, area) = if replace { ("shift+cmd+3", "shift+cmd+4") } else { ("shift+cmd+1", "shift+cmd+2") };
+        let (screen, area) = if replace { INSTEAD } else { BESIDE };
         settings::update(cx, |s| {
             s.hotkeys.insert(Capture::Fullscreen, Some(screen.into()));
             s.hotkeys.insert(Capture::Area, Some(area.into()));
         });
         if replace && let Err(err) = crate::mac::release_screenshot_keys() {
-            crate::toast::show(format!("Couldn't turn off the macOS shortcuts: {err}"), cx);
+            let whose = crate::platform_text("the macOS shortcuts", "Snipping Tool on Print Screen");
+            crate::toast::show(format!("Couldn't turn off {whose}: {err}"), cx);
         }
         crate::settings_window::refresh_system_shortcuts(cx);
         if let Some(fix) = [screen, area].into_iter().find_map(|keys| crate::settings_window::system_conflict(keys, cx)) {
@@ -122,9 +127,13 @@ impl Onboarding {
                     .max_w(px(380.))
                     .text_center()
                     .text_color(theme.muted_foreground)
-                    .child("Kiri lives in the menu bar. Press a shortcut to capture, then mark it up, copy it, or pin it."),
+                    .child(crate::platform_text(
+                        "Kiri lives in the menu bar. Press a shortcut to capture, then mark it up, copy it, or pin it.",
+                        "Kiri lives in the tray, by the clock. Press a shortcut to capture, then mark it up, copy it, or pin it.",
+                    )),
             )
-            .child(
+            // Windows asks no permission to capture.
+            .when(cfg!(target_os = "macos"), |d| d.child(
                 h_flex()
                     .mt_8()
                     .w(px(440.))
@@ -140,13 +149,13 @@ impl Onboarding {
                             .child(div().text_xs().text_color(theme.muted_foreground).child("Kiri needs it to capture. Nothing leaves your Mac.")),
                     )
                     .child(permission),
-            )
+            ))
             .into_any_element()
     }
 
     fn shortcuts(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme().clone();
-        let option = |id: &'static str, replace: bool, title: &'static str, keys: [(&'static str, &'static str); 2], note: &'static str| {
+        let option = |id: &'static str, replace: bool, title: &'static str, keys: [(String, &'static str); 2], note: &'static str| {
             let selected = self.replace_system == replace;
             v_flex()
                 .id(id)
@@ -190,16 +199,22 @@ impl Onboarding {
                     .child(option(
                         "beside",
                         false,
-                        "Next to macOS",
-                        [("⇧⌘2", "Capture Area"), ("⇧⌘1", "Capture Screen")],
-                        "The macOS screenshot shortcuts stay as they are.",
+                        crate::platform_text("Next to macOS", "Next to Snipping Tool"),
+                        keys(BESIDE),
+                        crate::platform_text(
+                            "The macOS screenshot shortcuts stay as they are.",
+                            "Print Screen and Win+Shift+S keep opening Snipping Tool.",
+                        ),
                     ))
                     .child(option(
                         "instead",
                         true,
-                        "Instead of macOS",
-                        [("⇧⌘4", "Capture Area"), ("⇧⌘3", "Capture Screen")],
-                        "Turns off ⇧⌘3 and ⇧⌘4 in macOS, so they open Kiri. ⇧⌘5 stays.",
+                        crate::platform_text("Instead of macOS", "Instead of Snipping Tool"),
+                        keys(INSTEAD),
+                        crate::platform_text(
+                            "Turns off ⇧⌘3 and ⇧⌘4 in macOS, so they open Kiri. ⇧⌘5 stays.",
+                            "Turns off Snipping Tool on Print Screen, so it opens Kiri. Win+Shift+S stays.",
+                        ),
                     )),
             )
             .into_any_element()
@@ -235,7 +250,12 @@ impl Onboarding {
     }
 }
 
-fn keycap(keys: &'static str, theme: &gpui_kit::component::Theme) -> impl IntoElement {
+fn keys((screen, area): (&str, &str)) -> [(String, &'static str); 2] {
+    let pretty = crate::settings_window::pretty;
+    [(pretty(area), "Capture Area"), (pretty(screen), "Capture Screen")]
+}
+
+fn keycap(keys: String, theme: &gpui_kit::component::Theme) -> impl IntoElement {
     div()
         .min_w(px(44.))
         .h(px(24.))
@@ -252,7 +272,7 @@ fn keycap(keys: &'static str, theme: &gpui_kit::component::Theme) -> impl IntoEl
 }
 
 impl Render for Onboarding {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let page = match self.step {
             0 => self.welcome(cx),
@@ -292,13 +312,18 @@ impl Render for Onboarding {
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
-            .child(
-                div()
-                    .h(px(44.))
-                    .flex_none()
-                    .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move()),
-            )
+            .child(titlebar(window, cx))
             .child(div().flex_1().flex().flex_col().justify_center().pb_4().child(page))
             .child(footer)
     }
+}
+
+/// The titlebar is transparent, so this band stands in for it.
+fn titlebar(window: &Window, cx: &App) -> impl IntoElement {
+    let bar = div().h(px(44.)).flex_none().on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move());
+    #[cfg(windows)]
+    let bar = bar.window_control_area(WindowControlArea::Drag).flex().justify_end().child(crate::mac::caption_buttons(window, cx));
+    #[cfg(not(windows))]
+    let _ = (window, cx);
+    bar
 }
