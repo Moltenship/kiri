@@ -39,7 +39,7 @@ async function script(a: Act<S>) {
 
   const menuAt = () => {
     const c = grab(PLACE)
-    return { x: c.x - 212, y: c.y + 4 }
+    return { x: c.x - 250, y: c.y + 4 }
   }
   await a.click(grab(PLACE), { right: true })
   await a.set({ menu: menuAt() })
