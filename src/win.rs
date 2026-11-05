@@ -283,6 +283,18 @@ pub fn resize_from_top(window: &Window, w: f32, h: f32) {
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) };
 }
 
+/// Moves the window with the mouse as its title bar would, once gpui is done with the press.
+pub fn start_window_move(window: &Window) {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+    if let Some(hwnd) = hwnd(window) {
+        unsafe {
+            let _ = ReleaseCapture();
+            let _ = PostMessageW(Some(hwnd), WM_SYSCOMMAND, WPARAM((SC_MOVE | HTCAPTION) as usize), LPARAM(0));
+        }
+    }
+}
+
 /// Minimize, maximize, and close for a window that draws its own title bar. Windows runs
 /// their clicks and snap layouts from the areas they mark, as it does for its own.
 pub fn caption_buttons(window: &Window, cx: &gpui_kit::App) -> impl gpui_kit::IntoElement {

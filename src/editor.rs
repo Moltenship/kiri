@@ -227,6 +227,8 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 const TOOLBAR_H: f32 = 52.;
+/// What Windows' caption buttons and room to drag add to the toolbar, net of the room macOS keeps for its own.
+const CAPTION_W: f32 = if cfg!(windows) { 168. } else { 0. };
 const FIT_MARGIN: f32 = 28.;
 /// Canvas padding once objects grow it, in points.
 const GROW_PAD: f32 = 20.;
@@ -383,7 +385,7 @@ fn open_with(
     let (dw, dh) = display.map(mac::display_points).unwrap_or((1440., 900.));
     let (iw, ih) = (image.width as f32 / scale, image.height as f32 / scale);
     let win = size(
-        px((iw + FIT_MARGIN * 2.).clamp(940., dw * 0.86)),
+        px((iw + FIT_MARGIN * 2.).min(dw * 0.86).max(940. + CAPTION_W)),
         px((ih + TOOLBAR_H + FIT_MARGIN * 2.).clamp(480., dh * 0.86)),
     );
     let options = WindowOptions {
@@ -396,7 +398,7 @@ fn open_with(
             traffic_light_position: Some(point(px(18.), px(19.))),
         }),
         app_owns_titlebar_drag: true,
-        window_min_size: Some(size(px(900.), px(380.))),
+        window_min_size: Some(size(px(900. + CAPTION_W), px(380.))),
         display_id,
         focus: true,
         show: true,
