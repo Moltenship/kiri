@@ -39,8 +39,8 @@ Kiri is an open-source alternative to [Shottr](https://shottr.cc/), and most of 
 
 ## Install
 
-1. Download `Kiri.zip` from the [releases page](https://github.com/Moltenship/kiri/releases).
-2. Unzip it and move `Kiri.app` to Applications.
+1. Download `Kiri.dmg` from the [releases page](https://github.com/Moltenship/kiri/releases).
+2. Open it and drag Kiri to Applications.
 3. Open it. The welcome window asks for Screen Recording, then lets you pick the capture shortcuts and the appearance.
 
 Kiri then lives in the menu bar. Scrolling capture asks for Accessibility the first time you use it.

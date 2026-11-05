@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Kiri.app, signs and notarizes it, and with --publish uploads it as a GitHub release.
+# Builds Kiri.app, signs and notarizes it as Kiri.dmg and Kiri.zip, and with --publish uploads both as a GitHub release.
 # Needs a Developer ID identity in the keychain and an App Store Connect API key in
 # ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH. See docs/operations/release.md.
 set -eu
@@ -9,6 +9,9 @@ VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 IDENTITY=${KIRI_IDENTITY:-"Developer ID Application: Timofei Maksimov (Q9SDRFKBC6)"}
 APP=dist/Kiri.app
 ZIP=dist/Kiri.zip
+DMG=dist/Kiri.dmg
+# dmgbuild lays out the DMG window without scripting Finder.
+DMGBUILD=$HOME/.cache/kiri-dmg/venv/bin/dmgbuild
 : "${ASC_KEY_ID:?}" "${ASC_ISSUER_ID:?}" "${ASC_KEY_PATH:?}"
 
 if [ "${1:-}" = "--publish" ]; then
@@ -18,7 +21,7 @@ if [ "${1:-}" = "--publish" ]; then
 fi
 
 cargo build --release
-rm -rf "$APP" "$ZIP"
+rm -rf "$APP" "$ZIP" "$DMG"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/kiri "$APP/Contents/MacOS/kiri"
 cp macos/Kiri.icns "$APP/Contents/Resources/Kiri.icns"
@@ -32,8 +35,18 @@ xcrun stapler staple "$APP"
 rm "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 spctl --assess --type execute "$APP"
-echo "Built $ZIP ($VERSION)"
+
+if [ ! -x "$DMGBUILD" ]; then
+    python3 -m venv "$HOME/.cache/kiri-dmg/venv"
+    "$HOME/.cache/kiri-dmg/venv/bin/pip" install -q dmgbuild==1.6.7
+fi
+"$DMGBUILD" -s macos/dmg.py -D app="$APP" Kiri "$DMG"
+codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+xcrun notarytool submit "$DMG" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
+xcrun stapler staple "$DMG"
+spctl --assess --type open --context context:primary-signature "$DMG"
+echo "Built $DMG and $ZIP ($VERSION)"
 
 [ "${1:-}" = "--publish" ] || exit 0
 case $VERSION in *-*) PRE=--prerelease ;; *) PRE= ;; esac
-printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$ZIP" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - $PRE
+printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$DMG" "$ZIP" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - $PRE
