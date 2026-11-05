@@ -1,4 +1,5 @@
-//! Text recognition through Windows.Media.Ocr, in the languages installed in Windows.
+//! Text recognition through Windows.Media.Ocr, in the languages installed in Windows, and QR
+//! codes through rqrr, since Windows has no barcode reader for still images.
 
 use windows::Globalization::Language;
 use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
@@ -12,10 +13,29 @@ type Box4 = (f32, f32, f32, f32);
 
 const MARGIN: u32 = 24;
 
-/// Windows has no barcode reader for still images, so this finds text only.
+/// A QR code's text if the image has one, as on macOS, else the image's text.
 pub fn recognize(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<Recognized, String> {
+    if let Some(code) = qr(bgra, width, height) {
+        return Ok(Recognized::Barcode(code));
+    }
     let text = lines(bgra, width, height, languages)?.into_iter().map(|(_, line)| line).collect::<Vec<_>>().join("\n");
     Ok(if text.trim().is_empty() { Recognized::Nothing } else { Recognized::Text(text) })
+}
+
+/// Dark on light, then light on dark.
+fn qr(bgra: &[u8], width: u32, height: u32) -> Option<String> {
+    if bgra.len() != (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let luma: Vec<u8> = bgra.chunks_exact(4).map(|p| ((p[2] as u32 * 77 + p[1] as u32 * 150 + p[0] as u32 * 29) >> 8) as u8).collect();
+    [false, true].into_iter().find_map(|invert| {
+        let w = width as usize;
+        let mut image = rqrr::PreparedImage::prepare_from_greyscale(w, height as usize, |x, y| match invert {
+            false => luma[y * w + x],
+            true => 255 - luma[y * w + x],
+        });
+        image.detect_grids().iter().filter_map(|grid| grid.decode().ok()).map(|(_, text)| text).find(|text| !text.is_empty())
+    })
 }
 
 /// Line boxes in image pixels, origin top-left.
@@ -79,4 +99,47 @@ fn lines(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<V
     }
     lines.sort_by(|(a, _), (b, _)| a.1.total_cmp(&b.1));
     Ok(lines)
+}
+
+#[cfg(test)]
+mod tests {
+    /// "kiri", as segno draws it.
+    const KIRI: [&str; 21] = [
+        "#######.......#######",
+        "#.....#.#.###.#.....#",
+        "#.###.#....##.#.###.#",
+        "#.###.#...#.#.#.###.#",
+        "#.###.#.##..#.#.###.#",
+        "#.....#...#.#.#.....#",
+        "#######.#.#.#.#######",
+        ".........#.##........",
+        "#.#.#.#..#.#....#..#.",
+        "##.###.#.#....#..####",
+        ".#######..#.#...#####",
+        "#.#.#..#.#....#.....#",
+        "###.#.####..#.#.##...",
+        "........#.##.#.#.#.##",
+        "#######..###.###...##",
+        "#.....#..#####.##..#.",
+        "#.###.#.#.##.###...##",
+        "#.###.#.......##.###.",
+        "#.###.#.###.#...###.#",
+        "#.....#..#....##.#.#.",
+        "#######.#...#.#.#.###",
+    ];
+
+    #[test]
+    fn reads_qr_codes_dark_on_light_and_light_on_dark() {
+        let (scale, border, n) = (4, 4, (21 + 8) * 4);
+        for (dark, light) in [([0, 0, 0, 255], [255; 4]), ([255; 4], [40, 30, 30, 255])] {
+            let bgra: Vec<u8> = (0..n * n)
+                .flat_map(|i| {
+                    let (x, y) = ((i % n) / scale, (i / n) / scale);
+                    let inside = (border..border + 21).contains(&x) && (border..border + 21).contains(&y);
+                    if inside && KIRI[y - border].as_bytes()[x - border] == b'#' { dark } else { light }
+                })
+                .collect();
+            assert_eq!(super::qr(&bgra, n as u32, n as u32).as_deref(), Some("kiri"));
+        }
+    }
 }

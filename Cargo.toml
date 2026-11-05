@@ -30,6 +30,8 @@ objc2-screen-capture-kit = "0.3"
 objc2-vision = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "objc2-core-graphics", "VNDetectBarcodesRequest", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler"] }
 
 [target.'cfg(windows)'.dependencies]
+# Windows has no QR reader for still images.
+rqrr = "0.11.0"
 # Already in gpui's tree; Windows' strftime aborts on a bad field, chrono reports it.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 windows = { version = "0.62", features = [

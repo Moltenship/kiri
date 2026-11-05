@@ -19,7 +19,6 @@ use objc2_vision::{
 #[cfg(windows)]
 pub use crate::win::ocr::{languages, recognize, text_boxes};
 
-#[cfg_attr(windows, allow(dead_code))]
 pub enum Recognized {
     Barcode(String),
     Text(String),

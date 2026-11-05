@@ -7,6 +7,7 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 ### Added
 - Windows: capture a window or the active window, even when it's covered.
 - Windows: Capture Text, Recognize Text, and Blur Text read text with Windows' own text recognition, in the languages installed in Windows.
+- Windows: Capture Text and Recognize Text read QR codes.
 - Windows: Launch at Login.
 - Windows: Print, on one page, landscape when the image is wide.
 - Windows: Kiri.exe has Kiri's icon, in Explorer, the taskbar, and Alt+Tab.
