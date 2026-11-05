@@ -10,7 +10,7 @@ use gpui_kit::Window;
 use objc2::runtime::ProtocolObject;
 use objc2::AnyThread;
 use objc2_app_kit::{
-    NSApplication, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
+    NSApplication, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
     NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSView,
     NSWindowStyleMask,
 };
@@ -49,7 +49,15 @@ pub fn ensure_screen_access() -> bool {
 /// `captureImageInRect` (macOS 15.2+) skips the slow `SCShareableContent`
 /// round trip that a filter-based screenshot needs.
 pub async fn capture_display(display: CGDirectDisplayID) -> Option<Shot> {
-    let bounds = CGDisplayBounds(display);
+    capture_rect(display, CGDisplayBounds(display)).await
+}
+
+/// `(x, y, w, h)` in global top-left points, on `display`.
+pub async fn capture_area(display: CGDirectDisplayID, (x, y, w, h): (f32, f32, f32, f32)) -> Option<Shot> {
+    capture_rect(display, CGRect::new(CGPoint::new(x as f64, y as f64), CGSize::new(w as f64, h as f64))).await
+}
+
+async fn capture_rect(display: CGDirectDisplayID, bounds: CGRect) -> Option<Shot> {
     let (tx, rx) = oneshot::channel();
     let tx = Mutex::new(Some(tx));
     let handler = RcBlock::new(move |image: *mut CGImage, _error: *mut NSError| {
@@ -108,8 +116,38 @@ pub fn make_overlay(window: &Window, display: CGDirectDisplayID) {
     ns_window.setStyleMask(NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel);
     ns_window.setLevel(NSScreenSaverWindowLevel);
     ns_window.setHasShadow(false);
+    // A transparent window lets clicks through its clear pixels unless told otherwise.
+    ns_window.setIgnoresMouseEvents(false);
     ns_window.setFrame_display(frame, true);
     ns_window.makeKeyAndOrderFront(None);
+}
+
+/// The system's own screenshot cursors, the ones ⇧⌘4 shows: a crosshair for an area and
+/// a camera for a window. They are read from the OS at run time, never shipped.
+fn screenshot_cursor(window_pick: bool) -> Option<objc2::rc::Retained<NSCursor>> {
+    thread_local! {
+        static CURSORS: [Option<objc2::rc::Retained<NSCursor>>; 2] = [load_cursor("screenshotselection", 15., 15.), load_cursor("screenshotwindow", 14., 11.)];
+    }
+    CURSORS.with(|c| c[window_pick as usize].clone())
+}
+
+/// `hot` comes from the cursor's info.plist, in points from the top-left.
+fn load_cursor(name: &str, hot_x: f64, hot_y: f64) -> Option<objc2::rc::Retained<NSCursor>> {
+    const DIR: &str = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors";
+    let path = NSString::from_str(&format!("{DIR}/{name}/cursor.pdf"));
+    let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &path)?;
+    Some(NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, CGPoint::new(hot_x, hot_y)))
+}
+
+/// Shows the system screenshot cursor over an overlay window. Its cursor rects are turned
+/// off, or GPUI's would put its own cursor back. Returns false when the OS has none.
+pub fn set_screenshot_cursor(window: &Window, window_pick: bool) -> bool {
+    let Some(cursor) = screenshot_cursor(window_pick) else { return false };
+    if let Some(ns_window) = ns_view(window).and_then(|v| v.window()) {
+        ns_window.disableCursorRects();
+    }
+    cursor.set();
+    true
 }
 
 pub fn make_key(window: &Window) {

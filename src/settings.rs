@@ -207,6 +207,8 @@ pub struct Settings {
     pub scroll_reverse: bool,
     /// The user scrolls; Kiri only watches and stitches.
     pub scroll_manual: bool,
+    /// The overlay shows a still of the moment the hotkey was pressed, instead of the live screen.
+    pub freeze_screen: bool,
     /// `kiri --capture` may run captures; off, a request asks first.
     pub automation: bool,
     pub hotkeys: BTreeMap<Capture, Option<String>>,
@@ -242,6 +244,7 @@ impl Default for Settings {
             scroll_reverse: false,
             scroll_manual: false,
             automation: false,
+            freeze_screen: false,
             hotkeys: BTreeMap::new(),
             styles: BTreeMap::new(),
             backdrop: None,

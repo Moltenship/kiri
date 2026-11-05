@@ -48,7 +48,8 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 ## Requirements per feature
 
 ### 01 Area capture
-- Freeze all displays at the moment of capture. The selection can span monitors.
+- The overlay shows the live screen and takes the shot on release, like the system grabber the alternative uses. Settings → Capture → Freeze the screen selects on a still of every display taken at the hotkey instead, so menus and hover states stay put.
+- The cursor is the system's own screenshot crosshair, or its camera when picking a window, read from the OS, and the numbers under it are drawn the way the system grabber draws them.
 - Show coordinates before dragging and width × height while dragging, in the editor's unit.
 - `Esc` cancels, releasing the mouse confirms. Decide what a click without a drag does (the alternative ignores it).
 - Repeat area remembers the last rectangle per display layout.

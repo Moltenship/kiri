@@ -47,7 +47,8 @@ pub fn last_area(cx: &App) -> Option<(u32, PxRect)> {
     cx.try_global::<Session>().and_then(|s| s.last_area)
 }
 
-pub fn start(shots: Vec<Shot>, mode: Mode, targets: Vec<WindowInfo>, hotkey_at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {
+/// One overlay per display; a display with a `Shot` shows that still, one without shows the live screen.
+pub fn start(screens: Vec<(u32, Option<Shot>)>, mode: Mode, targets: Vec<WindowInfo>, hotkey_at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {
     close_all(cx);
     if mode == Mode::Window && targets.is_empty() {
         crate::toast::show("No windows to capture. Try Capture Screen instead", cx);
@@ -56,8 +57,7 @@ pub fn start(shots: Vec<Shot>, mode: Mode, targets: Vec<WindowInfo>, hotkey_at: 
     let first_paint = Rc::new(Cell::new(Some(hotkey_at)));
     let targets = Rc::new(targets);
     let mut windows = Vec::new();
-    for shot in shots {
-        let display = shot.display;
+    for (display, shot) in screens {
         let (w, h) = mac::display_points(display);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(0.), px(0.)), size(px(w), px(h))))),
@@ -69,19 +69,23 @@ pub fn start(shots: Vec<Shot>, mode: Mode, targets: Vec<WindowInfo>, hotkey_at: 
             is_minimizable: false,
             focus: true,
             show: true,
+            window_background: WindowBackgroundAppearance::Transparent,
             ..Default::default()
         };
         let first_paint = first_paint.clone();
         let targets = targets.clone();
         let opened = gpui_kit::open_window(options, cx, |window, cx| {
-            let overlay = cx.new(|cx| Overlay::new(shot, mode, targets, first_paint, cx.focus_handle()));
+            let overlay = cx.new(|cx| Overlay::new(display, (w, h), shot, mode, targets, first_paint, cx.focus_handle()));
             window.focus(&overlay.read(cx).focus.clone(), cx);
             overlay
         });
         match opened {
             Ok((handle, _)) => {
                 // After open, so GPUI's own show does not reorder the window again.
-                let _ = handle.update(cx, |_, window, _| mac::make_overlay(window, display));
+                let _ = handle.update(cx, |_, window, _| {
+                    mac::make_overlay(window, display);
+                    mac::set_screenshot_cursor(window, mode == Mode::Window);
+                });
                 windows.push(handle);
             }
             Err(err) => eprintln!("kiri: overlay window failed: {err:#}"),
@@ -110,9 +114,13 @@ pub fn close_all(cx: &mut App) {
 pub struct Overlay {
     display: u32,
     origin: (f32, f32),
+    /// The display's size in points.
+    size: (f32, f32),
+    /// Pixels per point of `image`.
     scale: f32,
     mode: Mode,
-    image: TiledImage,
+    /// The still shown while selecting, when the screen is frozen.
+    image: Option<TiledImage>,
     targets: Rc<Vec<WindowInfo>>,
     picking: bool,
     /// How many windows under the cursor `Tab` has skipped.
@@ -128,17 +136,21 @@ pub struct Overlay {
 
 impl Overlay {
     fn new(
-        shot: Shot,
+        display: u32,
+        size: (f32, f32),
+        shot: Option<Shot>,
         mode: Mode,
         targets: Rc<Vec<WindowInfo>>,
         first_paint: Rc<Cell<Option<Instant>>>,
         focus: FocusHandle,
     ) -> Self {
-        let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra, (shot.width * 4) as usize);
+        let scale = shot.as_ref().map_or(1., |s| s.scale);
+        let image = shot.map(|s| TiledImage::from_bgra(s.width, s.height, &s.bgra, (s.width * 4) as usize));
         Self {
-            display: shot.display,
-            origin: mac::display_origin(shot.display),
-            scale: shot.scale,
+            display,
+            origin: mac::display_origin(display),
+            size,
+            scale,
             mode,
             image,
             targets,
@@ -155,7 +167,7 @@ impl Overlay {
 
     fn selection(&self) -> Option<Bounds<Pixels>> {
         let (a, b) = (self.drag?.anchor, self.drag?.corner);
-        let (w, h) = (self.image.width as f32 / self.scale, self.image.height as f32 / self.scale);
+        let (w, h) = self.size;
         let clamp = |v: Pixels, max: f32| px(v.as_f32().clamp(0., max));
         Some(Bounds::from_corners(
             point(clamp(a.x.min(b.x), w), clamp(a.y.min(b.y), h)),
@@ -215,7 +227,7 @@ impl Overlay {
 
     fn step(&mut self, dx: f32, dy: f32, cx: &mut Context<Self>) {
         let Some(c) = self.cursor else { return };
-        let (w, h) = (self.image.width as f32 / self.scale, self.image.height as f32 / self.scale);
+        let (w, h) = self.size;
         let to = point(px((c.x.as_f32() + dx).clamp(0., w - 1.)), px((c.y.as_f32() + dy).clamp(0., h - 1.)));
         mac::warp_cursor(self.origin.0 + to.x.as_f32(), self.origin.1 + to.y.as_f32());
         self.track(to, cx);
@@ -250,43 +262,42 @@ impl Overlay {
             return self.finish_window(cx);
         }
         let Some(sel) = self.selection() else { return };
-        let s = self.scale;
-        let x = (sel.origin.x.as_f32() * s).round().max(0.) as u32;
-        let y = (sel.origin.y.as_f32() * s).round().max(0.) as u32;
-        let w = ((sel.size.width.as_f32() * s).round() as u32).min(self.image.width - x);
-        let h = ((sel.size.height.as_f32() * s).round() as u32).min(self.image.height - y);
-        if w < 4 || h < 4 {
+        let (x, y, w, h) = (sel.origin.x.as_f32(), sel.origin.y.as_f32(), sel.size.width.as_f32(), sel.size.height.as_f32());
+        if w < 2. || h < 2. {
             // A click without a drag does nothing, like the system grabber.
             self.drag = None;
             cx.notify();
             return;
         }
-        let rect = PxRect { x, y, w, h };
-        let display = self.display;
-        let mode = self.mode;
-        let global = (
-            self.origin.0 + sel.origin.x.as_f32(),
-            self.origin.1 + sel.origin.y.as_f32(),
-            sel.size.width.as_f32(),
-            sel.size.height.as_f32(),
-        );
-        let bgra = self.image.read(rect);
+        let (display, mode, s) = (self.display, self.mode, self.scale);
+        let global = (self.origin.0 + x, self.origin.1 + y, w, h);
+        let frozen = self.image.as_ref().map(|image| {
+            let px = |v: f32| (v * s).round().max(0.) as u32;
+            let (px_x, px_y) = (px(x).min(image.width - 1), px(y).min(image.height - 1));
+            let rect = PxRect { x: px_x, y: px_y, w: px(w).min(image.width - px_x), h: px(h).min(image.height - px_y) };
+            (rect, image.read(rect))
+        });
         // App-level defer: a window can't be updated from inside its own `window.defer`.
         cx.defer(move |cx| {
             let add_to = cx.global_mut::<Session>().add_to.take();
             close_all(cx);
-            match mode {
-                Mode::Area | Mode::Window => {
-                    cx.global_mut::<Session>().last_area = Some((display, rect));
-                    let image = TiledImage::from_bgra(w, h, &bgra, (w * 4) as usize);
-                    drop(bgra);
-                    match add_to {
-                        Some(editor) => crate::editor::add_capture(editor, image, s, cx),
-                        None => crate::deliver(image, s, Some(display), cx),
-                    }
-                }
-                Mode::Text => crate::ocr::recognize_and_copy(bgra, w, h, cx),
-                Mode::Scroll { up } => crate::scrolling::start(global, display, up, cx),
+            if let Mode::Scroll { up } = mode {
+                return crate::scrolling::start(global, display, up, cx);
+            }
+            match frozen {
+                Some((rect, bgra)) => finish_area(mode, display, rect, bgra, s, add_to, cx),
+                None => cx
+                    .spawn(async move |cx| {
+                        // Lets the window server drop the overlay before the frame is taken.
+                        cx.background_executor().timer(Duration::from_millis(120)).await;
+                        let Some(shot) = mac::capture_area(display, global).await else {
+                            return cx.update(|cx| crate::toast::show("Couldn't capture the screen", cx));
+                        };
+                        let at = |v: f32| (v * shot.scale).round().max(0.) as u32;
+                        let rect = PxRect { x: at(x), y: at(y), w: shot.width, h: shot.height };
+                        cx.update(|cx| finish_area(mode, display, rect, shot.bgra, shot.scale, add_to, cx));
+                    })
+                    .detach(),
             }
         });
     }
@@ -316,9 +327,27 @@ impl Overlay {
     }
 }
 
+/// `rect` is where `bgra` sits on its display, remembered for Repeat Area.
+fn finish_area(mode: Mode, display: u32, rect: PxRect, bgra: Vec<u8>, scale: f32, add_to: Option<AnyWindowHandle>, cx: &mut App) {
+    let (w, h) = (rect.w, rect.h);
+    match mode {
+        Mode::Text => crate::ocr::recognize_and_copy(bgra, w, h, cx),
+        _ => {
+            cx.global_mut::<Session>().last_area = Some((display, rect));
+            let image = TiledImage::from_bgra(w, h, &bgra, (w * 4) as usize);
+            drop(bgra);
+            match add_to {
+                Some(editor) => crate::editor::add_capture(editor, image, scale, cx),
+                None => crate::deliver(image, scale, Some(display), cx),
+            }
+        }
+    }
+}
+
 impl Render for Overlay {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tiles: Vec<(PxRect, Arc<RenderImage>)> = self.image.tiles().map(|(r, t)| (r, t.clone())).collect();
+        let tiles: Vec<(PxRect, Arc<RenderImage>)> =
+            self.image.iter().flat_map(|image| image.tiles().map(|(r, t)| (r, t.clone()))).collect();
         let scale = self.scale;
         let picking = self.picking;
         let selection = if picking { self.target().map(|(_, b)| b) } else { self.selection() };
@@ -330,11 +359,11 @@ impl Render for Overlay {
                 let name = if w.title.is_empty() { w.app.clone() } else { format!("{} — {}", w.app, w.title) };
                 (c, name)
             }),
-            (false, Some(sel), Some(c)) => Some((
-                c,
-                format!("{}\n{}", sel.size.width.as_f32().round(), sel.size.height.as_f32().round()),
-            )),
-            (false, None, Some(c)) => Some((c, format!("{}\n{}", c.x.as_f32().round(), c.y.as_f32().round()))),
+            _ => None,
+        };
+        let numbers = match (picking, selection, cursor) {
+            (false, Some(sel), Some(c)) => Some((c, [sel.size.width, sel.size.height])),
+            (false, None, Some(c)) => Some((c, [c.x, c.y])),
             _ => None,
         };
         let hint = match self.mode {
@@ -350,7 +379,7 @@ impl Render for Overlay {
             .size_full()
             .relative()
             .cursor(if picking { CursorStyle::PointingHand } else { CursorStyle::Crosshair })
-            .on_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| match e.keystroke.key.as_str() {
+            .on_key_down(cx.listener(|this, e: &KeyDownEvent, window, cx| match e.keystroke.key.as_str() {
                 "tab" if this.picking && this.press(TAB, cx) => {
                     this.skip += 1;
                     cx.notify();
@@ -363,6 +392,7 @@ impl Render for Overlay {
                     if this.drag.is_none() && matches!(this.mode, Mode::Area | Mode::Window) {
                         this.picking = !this.picking;
                         this.skip = 0;
+                        mac::set_screenshot_cursor(window, this.picking);
                     }
                     this.refresh(cx);
                 }
@@ -427,6 +457,23 @@ impl Render for Overlay {
                         .text_sm()
                         .child(hint),
                 )
+            }))
+            .children(numbers.map(|(c, [a, b])| {
+                // Drawn like the system grabber's: two lines under the crosshair, dark digits
+                // with a light halo so they read on any screen.
+                let lines = [a, b].map(|v| v.as_f32().round().to_string());
+                let text = |color: Hsla| {
+                    div().flex().flex_col().text_color(color).children(lines.clone().map(|l| div().child(l)))
+                };
+                let halo = [(-1., 0.), (1., 0.), (0., -1.), (0., 1.), (-1., -1.), (1., 1.), (-1., 1.), (1., -1.)];
+                div()
+                    .absolute()
+                    .left(c.x + px(10.))
+                    .top(c.y + px(3.))
+                    .text_size(px(12.))
+                    .line_height(px(13.))
+                    .children(halo.map(|(dx, dy)| div().absolute().left(px(dx)).top(px(dy)).child(text(white().opacity(0.9)))))
+                    .child(div().relative().child(text(black())))
             }))
             .children(label.map(|(c, text)| {
                 div()

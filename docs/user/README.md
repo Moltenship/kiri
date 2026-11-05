@@ -4,7 +4,7 @@ Kiri lives in the menu bar. Every capture is in its menu, and Settings → Hotke
 
 ## Capturing
 
-- **Capture Area** (⇧⌘2): drag a rectangle. Hold `Space` while dragging to move it, `Shift` to lock an axis, or `Option` to grow it from the center. Arrow keys move the pointer one point at a time, before or during a drag, so an edge lands exactly where you want it. `Space` before dragging switches to picking a window. `Esc` cancels.
+- **Capture Area** (⇧⌘2): drag a rectangle. Hold `Space` while dragging to move it, `Shift` to lock an axis, or `Option` to grow it from the center. Arrow keys move the pointer one point at a time, before or during a drag, so an edge lands exactly where you want it. `Space` before dragging switches to picking a window. `Esc` cancels. To select on a still of the moment you pressed the hotkey, so menus and hover states stay put, turn on Settings → Capture → Freeze the screen while selecting.
 - **Capture Screen** (⇧⌘1) takes the display under the pointer. **Delayed Screenshot** waits a few seconds first (3 by default, set in Settings → Capture).
 - **Capture Window**: click a window. `Tab` picks the one behind it. Settings → Capture chooses what goes behind the window: wallpaper, transparency, a color, or nothing but the window.
 - **Scrolling Capture**: select the area, then keep your hands off the mouse while Kiri scrolls and stitches. `Esc` stops and keeps what was captured. It needs Accessibility access. If an app ignores it, turn on Settings → Capture → Scroll by hand and scroll yourself.

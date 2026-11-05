@@ -556,15 +556,21 @@ pub fn window_style(cx: &App) -> (settings::WindowBackground, u32) {
 
 fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {
     let displays: Vec<u32> = cx.displays().iter().map(|d| u64::from(d.id()) as u32).collect();
+    let freeze = settings::get(cx).freeze_screen;
     cx.spawn(async move |cx| {
         let windows = match mode {
             overlay::Mode::Window | overlay::Mode::Area => window_capture::list_windows().await,
             _ => Vec::new(),
         };
-        let shots = futures::future::join_all(displays.into_iter().map(mac::capture_display)).await;
-        let shots: Vec<_> = shots.into_iter().flatten().collect();
-        eprintln!("kiri: captured {} display(s) in {} ms", shots.len(), at.elapsed().as_millis());
-        cx.update(|cx| overlay::start(shots, mode, windows, at, add_to, cx));
+        let screens: Vec<_> = if freeze {
+            let shots = futures::future::join_all(displays.into_iter().map(mac::capture_display)).await;
+            let shots: Vec<_> = shots.into_iter().flatten().map(|s| (s.display, Some(s))).collect();
+            eprintln!("kiri: captured {} display(s) in {} ms", shots.len(), at.elapsed().as_millis());
+            shots
+        } else {
+            displays.into_iter().map(|d| (d, None)).collect()
+        };
+        cx.update(|cx| overlay::start(screens, mode, windows, at, add_to, cx));
     })
     .detach();
 }

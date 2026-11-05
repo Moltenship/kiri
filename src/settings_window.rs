@@ -281,6 +281,11 @@ fn capture(solid: &Entity<ColorPickerState>, cx: &App) -> Page {
         icon: IconName::Camera,
         groups: vec![
             group(
+                "Area",
+                [row("Freeze the screen while selecting", toggle("freeze", |s| s.freeze_screen, |s, v| s.freeze_screen = v, cx))
+                    .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")],
+            ),
+            group(
                 "Windows",
                 [
                     row("Window background", choice("background", BACKGROUNDS, |s| s.window_background, |s, v| s.window_background = v, cx)),
