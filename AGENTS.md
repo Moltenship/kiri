@@ -42,6 +42,12 @@ The rest of this document is meant to help you navigate the codebase and make ch
 - `docs/feature-reference/` records how the alternative behaves, as observed. `feature-map-reference.md` is the index. Each feature has a folder with `feature.md` and screenshots. Keep it to facts about the alternative: what it does, its hotkeys, texts, and quirks. Kiri decisions belong in `docs/feature-map.md`, which links to the reference. Mark anything unverified as such. Take screenshots on synthetic data only, never personal data or license details. This folder is committed on purpose. It is the one exception to the research-notes rule below.
 - Do not commit implementation plans, research notes, or agent scratch files. Keep temporary working material outside the worktree. .plans/ is gitignored only as a safety net for legacy tooling.
 
+## UI checks on Windows
+
+- Hand UI checks to a Codex `gpt-6-luna` child at low reasoning effort as the operator, with exact steps: what to launch, press, click, and screenshot, and what to report. Review its screenshots yourself.
+- Without one, drive Kiri with [agent-desktop](https://github.com/vercel-labs/agent-desktop), for example `agent-desktop --headed drag --from-xy 230,250 --to-xy 760,380`, then `agent-desktop screenshot shot.png --window-id <id>`. It doesn't list tool windows, which Kiri's overlay and toasts are.
+- Touch only Kiri's windows and a test window with synthetic text. Windows 11 Notepad opens into the user's existing window and files, so make your own test window. No full-screen screenshots, and never answer system prompts.
+
 ## Taste
 - Complexity belongs at the adapter boundary. UI stays dumb.
 - Default to no comment. Write one only for a constraint, an external quirk, or an invariant the code can't show, in one line where you can and four at most. Don't restate names or signatures, narrate steps, record history, or explain the fix you just made; the PR carries that.
