@@ -1430,8 +1430,9 @@ impl Editor {
         let edit = self.editing.as_mut().unwrap();
         let k = &e.keystroke;
         let m = k.modifiers;
-        // Clipboard keys take Ctrl on Windows; line and word moves keep their macOS keys for now.
+        // Windows takes Ctrl for clipboard keys and word moves, and Home and End for lines.
         let cmd = m.platform || cfg!(windows) && m.control;
+        let (word, line) = if cfg!(windows) { (m.control, false) } else { (m.alt, m.platform) };
         let (sel, c, t) = (edit.selection(), edit.caret, text.as_str());
         let width = |s: &str| measure(s, size, bold);
         match k.key.as_str() {
@@ -1446,17 +1447,17 @@ impl Editor {
                 let range = if !sel.is_empty() {
                     sel
                 } else if back {
-                    (if m.platform { te::line_start(t, c) } else if m.alt { te::prev_word(t, c) } else { te::prev_char(t, c) })..c
+                    (if line { te::line_start(t, c) } else if word { te::prev_word(t, c) } else { te::prev_char(t, c) })..c
                 } else {
-                    c..if m.platform { te::line_end(t, c) } else if m.alt { te::next_word(t, c) } else { te::next_char(t, c) }
+                    c..if line { te::line_end(t, c) } else if word { te::next_word(t, c) } else { te::next_char(t, c) }
                 };
                 edit.replace(&mut text, range, "");
             }
             "left" | "right" => {
                 let left = k.key == "left";
-                let to = if m.platform {
+                let to = if line {
                     if left { te::line_start(t, c) } else { te::line_end(t, c) }
-                } else if m.alt {
+                } else if word {
                     if left { te::prev_word(t, c) } else { te::next_word(t, c) }
                 } else if !sel.is_empty() && !m.shift {
                     if left { sel.start } else { sel.end }
@@ -1469,8 +1470,11 @@ impl Editor {
             }
             "up" | "down" => {
                 let down = k.key == "down";
-                let to = if m.platform { if down { t.len() } else { 0 } } else { te::vertical(t, c, down, width) };
+                let to = if line { if down { t.len() } else { 0 } } else { te::vertical(t, c, down, width) };
                 edit.go(to, m.shift);
+            }
+            "home" | "end" if cfg!(windows) && !m.control => {
+                edit.go(if k.key == "home" { te::line_start(t, c) } else { te::line_end(t, c) }, m.shift)
             }
             "home" => edit.go(0, m.shift),
             "end" => edit.go(t.len(), m.shift),
