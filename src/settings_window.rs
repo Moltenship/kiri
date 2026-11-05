@@ -45,7 +45,7 @@ pub fn open(cx: &mut App) {
         show: true,
         ..Default::default()
     };
-    let opened = gpui_kit::open_window(options, cx, |window, cx| {
+    let opened = crate::open_window(options, cx, |window, cx| {
         let view = cx.new(|cx| SettingsWindow::new(window, cx));
         window.focus(&view.read(cx).focus.clone(), cx);
         crate::mac::set_on_top(window, settings::get(cx).editor_on_top);
@@ -272,6 +272,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                 None,
                 [
                     row("Launch at login", login),
+                    row("Appearance", appearance_picker(64., cx)),
                     row("Check for updates automatically", toggle("updates", |s| s.auto_update, |s, v| s.auto_update = v, cx))
                         .description(format!("Downloads new versions from GitHub and installs them when Kiri quits. This is {}.", env!("CARGO_PKG_VERSION"))),
                 ],
@@ -402,6 +403,9 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
         .gap_2()
         .child(button("keyboard", "Open Keyboard Shortcuts", |cx| cx.open_url(KEYBOARD_SETTINGS)))
         .child(button("system-keys", "Use ⇧⌘3 and ⇧⌘4", |cx| {
+            if let Err(err) = crate::mac::release_screenshot_keys() {
+                crate::toast::show(format!("Couldn't turn off the macOS shortcuts: {err}"), cx);
+            }
             settings::update(cx, |s| {
                 s.hotkeys.insert(Capture::Fullscreen, Some("shift+cmd+3".into()));
                 s.hotkeys.insert(Capture::Area, Some("shift+cmd+4".into()));
@@ -423,7 +427,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
             group(
                 "System shortcuts",
                 [row("Screenshots in macOS", system)
-                    .description("To use ⇧⌘3 and ⇧⌘4, turn them off in Keyboard Shortcuts › Screenshots first. macOS keeps them otherwise.")],
+                    .description("Use ⇧⌘3 and ⇧⌘4 turns those off in macOS and gives them to Capture Screen and Capture Area.")],
             ),
         ],
     }
@@ -545,7 +549,7 @@ fn unshift(key: &str) -> Option<&'static str> {
     PAIRS.iter().find(|(shifted, _)| *shifted == key).map(|(_, plain)| *plain)
 }
 
-fn pretty(keys: &str) -> String {
+pub fn pretty(keys: &str) -> String {
     keys.split('+')
         .map(|part| match part {
             "ctrl" => "⌃".to_string(),
@@ -786,4 +790,111 @@ fn card(i: usize, title: Option<SharedString>, group: Group, theme: &gpui_kit::c
         .when_some(title, |s, t| s.child(div().px_3().pt_2().pb_2().text_sm().child(t)))
         .when_some(group.description, |s, d| s.child(div().px_3().pb_2().text_xs().text_color(theme.muted_foreground).child(d)))
         .child(v_flex().px_3().rounded(px(12.)).bg(theme.group_box).children(rows))
+}
+
+const APPEARANCES: [(settings::Appearance, &str); 3] =
+    [(settings::Appearance::System, "System"), (settings::Appearance::Light, "Light"), (settings::Appearance::Dark, "Dark")];
+
+/// System, Light, and Dark as small drawings of a Kiri window, `width` wide each.
+pub fn appearance_picker(width: f32, cx: &App) -> AnyElement {
+    let now = settings::get(cx).appearance;
+    let theme = cx.theme();
+    let height = (width * 0.64).round();
+    h_flex()
+        .gap(px((width * 0.1).round()))
+        .children(APPEARANCES.into_iter().map(|(appearance, label)| {
+            let selected = appearance == now;
+            let drawing = match appearance {
+                settings::Appearance::Light => wireframe(false, width, height).into_any_element(),
+                settings::Appearance::Dark => wireframe(true, width, height).into_any_element(),
+                settings::Appearance::System => {
+                    let half = |dark: bool| {
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left(px(if dark { width / 2. } else { 0. }))
+                            .w(px(width / 2.))
+                            .h(px(height))
+                            .overflow_hidden()
+                            .child(div().absolute().top_0().left(px(if dark { -width / 2. } else { 0. })).child(wireframe(dark, width, height)))
+                    };
+                    div().relative().w(px(width)).h(px(height)).child(half(false)).child(half(true))
+                    .into_any_element()
+                }
+            };
+            v_flex()
+                .id(label)
+                .items_center()
+                .gap_1p5()
+                .cursor_pointer()
+                .child(
+                    div()
+                        .p(px(2.))
+                        .rounded(px(9.))
+                        .border_2()
+                        .border_color(if selected { theme.ring } else { transparent_black() })
+                        .child(drawing),
+                )
+                .child(div().text_xs().text_color(if selected { theme.foreground } else { theme.muted_foreground }).child(label))
+                .on_click(move |_, _, cx| {
+                    settings::update(cx, |s| s.appearance = appearance);
+                    crate::apply_appearance(cx);
+                })
+        }))
+        .into_any_element()
+}
+
+/// A settings window in outline: a sidebar, and a group of rows with one switch on.
+fn wireframe(dark: bool, w: f32, h: f32) -> impl IntoElement {
+    let (window, sidebar, group, line, accent, edge) = if dark {
+        (rgb(0x131313), rgb(0x1E1E1E), rgb(0x262626), rgb(0x3A3A3A), rgb(0x4FA3F8), rgb(0x2E2E2E))
+    } else {
+        (rgb(0xF5F5F5), rgb(0xE6E6E6), rgb(0xFFFFFF), rgb(0xD6D6D6), rgb(0x0A84FF), rgb(0xDCDCDC))
+    };
+    let u = w / 100.;
+    let bar = |width: f32, color: Rgba| div().w(px(width * u)).h(px(3. * u)).rounded_full().bg(color);
+    let dot = |color: u32| div().size(px(3.2 * u)).rounded_full().bg(rgb(color));
+    let rows = (0..3).map(move |i| {
+        h_flex()
+            .h(px(9. * u))
+            .px(px(3. * u))
+            .justify_between()
+            .when(i > 0, |s| s.border_t_1().border_color(window))
+            .child(bar([22., 30., 18.][i], line))
+            .child(match i {
+                0 => div().w(px(9. * u)).h(px(5. * u)).rounded_full().bg(accent).into_any_element(),
+                1 => div().w(px(9. * u)).h(px(5. * u)).rounded_full().bg(line).into_any_element(),
+                _ => bar(10., line).into_any_element(),
+            })
+    });
+    // Content masks are rectangles, so the sidebar rounds its own corners.
+    h_flex()
+        .w(px(w))
+        .h(px(h))
+        .rounded(px(6.))
+        .border_1()
+        .border_color(edge)
+        .bg(window)
+        .child(
+            v_flex()
+                .w(px(30. * u))
+                .h_full()
+                .rounded_l(px(5.))
+                .bg(sidebar)
+                .p(px(4. * u))
+                .gap(px(3.5 * u))
+                .child(h_flex().gap(px(1.6 * u)).mb(px(2. * u)).child(dot(0xFF5F57)).child(dot(0xFEBC2E)).child(dot(0x28C840)))
+                .child(div().h(px(5. * u)).px(px(2. * u)).flex().items_center().rounded(px(1.5 * u)).bg(Hsla::from(line).opacity(0.6)).child(bar(13., accent)))
+                .child(div().px(px(2. * u)).child(bar(16., line)))
+                .child(div().px(px(2. * u)).child(bar(11., line))),
+        )
+        .child(
+            v_flex()
+                .flex_1()
+                .h_full()
+                .p(px(6. * u))
+                .gap(px(4. * u))
+                .child(bar(20., line))
+                .child(v_flex().rounded(px(2.5 * u)).bg(group).children(rows)),
+        )
 }

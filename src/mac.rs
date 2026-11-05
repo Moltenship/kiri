@@ -10,7 +10,7 @@ use gpui_kit::Window;
 use objc2::runtime::ProtocolObject;
 use objc2::AnyThread;
 use objc2_app_kit::{
-    NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
+    NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
     NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSView,
     NSWindowStyleMask,
 };
@@ -40,6 +40,42 @@ pub struct Shot {
     /// Pixels per point for this display.
     pub scale: f32,
     pub bgra: Vec<u8>,
+}
+
+pub fn has_screen_access() -> bool {
+    CGPreflightScreenCaptureAccess()
+}
+
+/// `None` follows the system. Blurred window backgrounds follow this too, not only Kiri's colors.
+pub fn set_appearance(dark: Option<bool>) {
+    let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+    let name = dark.map(|dark| unsafe { if dark { NSAppearanceNameDarkAqua } else { NSAppearanceNameAqua } });
+    let appearance = name.and_then(NSAppearance::appearanceNamed);
+    NSApplication::sharedApplication(mtm).setAppearance(appearance.as_deref());
+}
+
+/// Turns off the macOS ⇧⌘3 and ⇧⌘4 screenshot shortcuts, so they can be Kiri's.
+/// `activateSettings -u` applies symbolic hotkeys without logging out.
+pub fn release_screenshot_keys() -> std::io::Result<()> {
+    // Symbolic hotkey id, character, key code, ⇧⌘.
+    for (id, ch, code) in [(28, 51, 20), (30, 52, 21)] {
+        // XML keeps the types macOS wrote; the old-style syntax would store strings.
+        let entry = format!(
+            "<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>{ch}</integer>\
+             <integer>{code}</integer><integer>1179648</integer></array><key>type</key><string>standard</string></dict></dict>"
+        );
+        let ok = std::process::Command::new("/usr/bin/defaults")
+            .args(["write", "com.apple.symbolichotkeys", "AppleSymbolicHotKeys", "-dict-add", &id.to_string(), &entry])
+            .status()?
+            .success();
+        if !ok {
+            return Err(std::io::Error::other("defaults write failed"));
+        }
+    }
+    std::process::Command::new("/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings")
+        .arg("-u")
+        .status()?;
+    Ok(())
 }
 
 pub fn ensure_screen_access() -> bool {

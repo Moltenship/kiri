@@ -167,8 +167,8 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Tray icon on both platforms with the same menu. Kiri works with no window open. Hiding the icon, as the alternative allows, waits for the app bundle: relaunching Kiri is then the only way back to Settings, and that needs a Dock or Launchpad icon.
 - The first ⌘Q in a Kiri window asks whether to quit (hotkeys stop) or just close the window, and remembers the answer, as the alternative does. Settings → General → ⌘Q changes it later.
 - Every capture action can have a global hotkey, with a warning when the OS or another app owns the shortcut.
-- First-run guidance for freeing the system screenshot keys: ⇧⌘3/⇧⌘4 on macOS, `PrintScreen` on Windows ("Use Print Screen to open screen capture" must be off). Windows reserves `Win+Shift+S`.
-- Kiri defaults to ⇧⌘1/⇧⌘2 so it works before the system keys are freed. Settings → Hotkeys starts with how to free ⇧⌘3/⇧⌘4 and a button that moves Capture Screen and Capture Area there, like the alternative's Reassign Default.
+- A first-run window, in place of the alternative's splash: Screen Recording, then the capture shortcuts, then appearance and launch at login. It shows while no settings file exists, so updating from an older Kiri skips it.
+- Kiri defaults to ⇧⌘1/⇧⌘2, next to the system keys. Taking ⇧⌘3/⇧⌘4 instead, from the first-run window or Settings → Hotkeys (the alternative's Reassign Default), turns those two off in macOS's symbolic hotkeys and leaves ⇧⌘5 alone. On Windows the same choice frees `PrintScreen` ("Use Print Screen to open screen capture" must be off); Windows reserves `Win+Shift+S`.
 - One Kiri per user: launching it again opens Settings in the running one, or the file passed with `--open`, so there is never a second tray icon.
 - `kiri --capture <action>` (`area`, `fullscreen`, `active-window`, …) runs a capture in the running Kiri, for scripts, Shortcuts, and launchers. `--then edit,thumbnail,copy,save` replaces the after-capture settings for that one capture, like the alternative's `then=`. Kiri holds the screen recording permission, so this is off until Settings → Advanced → Automation allows it, and a request while off shows a toast with Allow, like the alternative's deep-link prompt. A URL scheme waits for the app bundle.
 - Launch at login, in Settings and as a checkmark in the tray menu, as in the alternative.
@@ -179,6 +179,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - One settings window: General, Capture, Editor, Hotkeys, Advanced. Short inline help for the non-obvious settings.
 - Settings live in a plain config file that can be imported and exported.
 - Expose the screenshot library in the UI. Cursor capture is left out until a capture path can include the cursor.
+- Appearance: System, Light, or Dark, picked from small drawings of a Kiri window. It sets the app's appearance, so blurred window backgrounds follow it too.
 - Dropped from the alternative: uploading, license, splash, diagnostics.
 - Consider WebP as a save format.
 

@@ -402,7 +402,7 @@ fn open_with(
         show: true,
         ..Default::default()
     };
-    let opened = gpui_kit::open_window(options, cx, |window, cx| {
+    let opened = crate::open_window(options, cx, |window, cx| {
         let view = cx.new(|cx| {
             let mut editor = Editor::new(image, scale, window, cx);
             setup(&mut editor, window, cx);

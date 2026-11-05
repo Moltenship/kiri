@@ -2,6 +2,8 @@
 
 Kiri lives in the menu bar. Every capture is in its menu, and Settings → Hotkeys gives any of them a shortcut.
 
+The first launch walks through Screen Recording access, the capture shortcuts, and the look. Settings → General changes the appearance later: System, Light, or Dark.
+
 ## Capturing
 
 - **Capture Area** (⇧⌘2): drag a rectangle. Hold `Space` while dragging to move it, `Shift` to lock an axis, or `Option` to grow it from the center. Arrow keys move the pointer one point at a time, before or during a drag, so an edge lands exactly where you want it. `Space` before dragging switches to picking a window. `Esc` cancels. To select on a still of the moment you pressed the hotkey, so menus and hover states stay put, turn on Settings → Capture → Freeze the screen while selecting.
@@ -11,7 +13,7 @@ Kiri lives in the menu bar. Every capture is in its menu, and Settings → Hotke
 - **Recognize Text or QR** (⌃⌥⌘O): select an area and its text or QR code is copied.
 - **Repeat Area Capture** takes the last area again, and **Reopen Last Screenshot** brings back the last editor you closed, with its annotations still editable.
 
-To use ⇧⌘3 and ⇧⌘4 for Kiri, Settings → Hotkeys shows how to free them from macOS.
+To capture with ⇧⌘3 and ⇧⌘4 instead, pick Instead of macOS on first launch, or Use ⇧⌘3 and ⇧⌘4 in Settings → Hotkeys. Kiri turns those two shortcuts off in macOS; ⇧⌘5 still opens the macOS screenshot toolbar. To get them back, turn them on in System Settings → Keyboard → Keyboard Shortcuts → Screenshots.
 
 ## After a capture
 

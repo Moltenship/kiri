@@ -5,6 +5,7 @@ mod editor;
 mod export;
 mod mac;
 mod ocr;
+mod onboarding;
 mod overlay;
 mod paint;
 mod pin;
@@ -103,6 +104,7 @@ impl AssetSource for KiriAssets {
 
 enum Command {
     Capture(Capture, Instant),
+    Welcome,
     CheckForUpdates,
     Cancel,
     OpenFile,
@@ -221,7 +223,9 @@ fn main() {
         gpui_kit::init(cx);
         load_theme(cx);
         cx.set_activation_policy(ActivationPolicy::Accessory);
+        let first_launch = !settings::path().exists();
         settings::load(cx);
+        apply_appearance(cx);
         editor::bind_keys(cx);
         pin::bind_keys(cx);
         preview::bind_keys(cx);
@@ -237,9 +241,13 @@ fn main() {
             Some("screen") => Some(Command::Capture(Capture::Fullscreen, Instant::now())),
             Some("window") => Some(Command::Capture(Capture::Window, Instant::now())),
             Some("settings") => Some(Command::Capture(Capture::Settings, Instant::now())),
+            Some("welcome") => Some(Command::Welcome),
             Some("stress") => Some(Command::StressTest),
             _ => None,
         };
+        if first_launch && capture.is_none() {
+            let _ = tx.unbounded_send(Command::Welcome);
+        }
         if let Some(demo) = demo {
             let _ = tx.unbounded_send(demo);
         }
@@ -482,6 +490,7 @@ fn handle(command: Command, cx: &mut App) {
             false => update::check(true, cx),
         },
         Command::Quit => cx.quit(),
+        Command::Welcome => onboarding::open(cx),
     }
 }
 
@@ -611,14 +620,45 @@ fn fullscreen(cx: &mut App) {
     .detach();
 }
 
-/// `gpui_kit::open_window` for a window that draws its own shape. The theme fills every
+/// `gpui_kit::open_window`, with the theme following the window, which follows the system
+/// unless Settings picks a side.
+pub fn open_window<V: Render>(
+    options: WindowOptions,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
+    // The system may have switched while no window was open to notice.
+    sync_theme(cx.window_appearance(), cx);
+    gpui_kit::open_window(options, cx, |window, cx| {
+        window.observe_window_appearance(|window, cx| sync_theme(window.appearance(), cx)).detach();
+        build(window, cx)
+    })
+}
+
+fn sync_theme(appearance: WindowAppearance, cx: &mut App) {
+    let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
+    if Theme::global(cx).mode.is_dark() != dark {
+        Theme::change(appearance, None, cx);
+    }
+}
+
+pub fn apply_appearance(cx: &mut App) {
+    mac::set_appearance(match settings::get(cx).appearance {
+        settings::Appearance::System => None,
+        settings::Appearance::Light => Some(false),
+        settings::Appearance::Dark => Some(true),
+    });
+    sync_theme(cx.window_appearance(), cx);
+}
+
+/// `open_window` for a window that draws its own shape. The theme fills every
 /// root, which shows as a rectangle around a rounded toast or the live screen.
 pub fn open_clear_window<V: Render>(
     options: WindowOptions,
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
 ) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
-    let opened = gpui_kit::open_window(options, cx, build)?;
+    let opened = open_window(options, cx, build)?;
     if let Some(root) = opened.0.downcast::<gpui_kit::base::Root>() {
         let _ = root.update(cx, |root, _, _| root.style().refine(&StyleRefinement::default().bg(transparent_black())));
     }

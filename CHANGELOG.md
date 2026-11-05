@@ -2,6 +2,19 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.2] - 2026-11-05
+
+### Added
+- A welcome window on first launch: Screen Recording, the capture shortcuts, and the look.
+- Kiri can take ⇧⌘3 and ⇧⌘4 from macOS in one click, from the welcome window or Settings → Hotkeys.
+- Light and Dark appearances, besides following the system, in Settings → General.
+
+### Changed
+- A new app icon and menu bar icon.
+
+### Fixed
+- Toasts, thumbnails, pins, and the scrolling HUD no longer sit on a square background.
+
 ## [0.1.0-beta.1] - 2026-11-05
 
 The first public beta, for macOS 15.2 or later on Apple Silicon.
