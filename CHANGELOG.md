@@ -2,6 +2,13 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.4] - 2026-11-05
+
+### Fixed
+- Capture Area no longer makes the screen blink: the app in front stays active while you select.
+- Capture Area always shows the system crosshair, not the arrow.
+- Recording a shortcut in Settings → Hotkeys no longer starts a macOS or Kiri capture, so ⇧⌘4 or ⇧⌘5 can be recorded.
+
 ## [0.1.0-beta.3] - 2026-11-05
 
 ### Changed
