@@ -74,6 +74,7 @@ gpui_kit::assets::icon_assets!(
         Image,
         Keyboard,
         Maximize2,
+        Menu,
         Minimize2,
         MoveUpRight,
         Pen,

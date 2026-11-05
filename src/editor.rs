@@ -220,6 +220,7 @@ pub fn bind_keys(cx: &mut App) {
     ];
     if cfg!(windows) {
         keys.push(KeyBinding::new("ctrl-y", Redo, base));
+        keys.push(KeyBinding::new("f11", EnterFullScreen, base));
     }
     macro_rules! tool_keys {
         ($($tool:ident => $action:ident),*) => {
@@ -303,7 +304,7 @@ fn app_menus() -> Vec<Menu> {
             MenuItem::action("Selection Top Left", SelectionTopLeft),
             MenuItem::action("Selection Bottom Right", SelectionBottomRight),
             MenuItem::separator(),
-            MenuItem::action("Enter Full Screen", EnterFullScreen),
+            MenuItem::action(crate::platform_text("Enter Full Screen", "Full Screen"), EnterFullScreen),
         ]),
     ]
 }
@@ -2680,6 +2681,8 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &RecognizeText, _, cx| this.recognize(cx)))
             .on_action(cx.listener(|this, _: &ImprintSize, _, cx| this.imprint_size(cx)))
             .on_action(cx.listener(|this, _: &ResetCrop, _, cx| this.reset_crop(cx)))
+            // AppKit runs the menu item on macOS.
+            .when(cfg!(windows), |d| d.on_action(|_: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &Rasterize, _, cx| this.rasterize(cx)))
             .on_action(cx.listener(|this, _: &CopyColor, _, cx| this.copy_color(false, cx)))
             .on_action(cx.listener(|this, _: &CopyTextColor, _, cx| this.copy_color(true, cx)))
@@ -2819,6 +2822,7 @@ impl Editor {
             .bg(theme.title_bar)
             .border_b_1()
             .border_color(theme.title_bar_border)
+            .when(cfg!(windows), |bar| bar.child(self.menu_button()))
             .child(icon_button("copy", IconName::Copy, "Copy and close", Box::new(CopyAndClose)))
             .child(icon_button("save", IconName::Download, "Save", Box::new(Save)))
             .child(icon_button("pin", IconName::Pin, "Pin to screen", Box::new(Pin)))
@@ -2972,6 +2976,24 @@ impl Editor {
         #[cfg(not(windows))]
         let _ = window;
         bar
+    }
+
+    /// Windows has no menu bar, so the macOS menus open from a button.
+    fn menu_button(&self) -> impl IntoElement + use<> {
+        let focus = self.focus.clone();
+        Button::new("menu").icon(Icon::new(IconName::Menu)).ghost().small().tooltip("Menu").dropdown_menu(move |menu, window, cx| {
+            let names: Vec<_> = app_menus().into_iter().map(|m| m.name).collect();
+            names.into_iter().enumerate().fold(menu.action_context(focus.clone()), |menu, (i, name)| {
+                let focus = focus.clone();
+                menu.submenu(name, window, cx, move |menu, _, _| {
+                    app_menus().swap_remove(i).items.into_iter().fold(menu.action_context(focus.clone()), |menu, item| match item {
+                        MenuItem::Separator => menu.separator(),
+                        MenuItem::Action { name, action, .. } => menu.menu(name, action),
+                        _ => menu,
+                    })
+                })
+            })
+        })
     }
 
     fn render_props(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
