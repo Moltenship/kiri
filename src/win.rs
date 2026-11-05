@@ -492,6 +492,21 @@ pub fn desktop_dir() -> PathBuf {
 
 pub fn mark_screenshot(_path: &Path) {}
 
+/// Drags `path` into other apps as Explorer drags a file, until it's dropped.
+pub fn drag_file_out(path: PathBuf, cx: &mut gpui_kit::App) {
+    use windows::Win32::System::Com::IDataObject;
+    use windows::Win32::System::Ole::{DROPEFFECT_COPY, IDropSource};
+    use windows::Win32::UI::Shell::{BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop};
+    let wide = windows::core::HSTRING::from(path.as_os_str());
+    // The shell's drag runs a modal loop, which must not run Kiri's window messages mid-update.
+    cx.spawn(async move |_| unsafe {
+        let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&wide, None) else { return };
+        let Ok(data) = item.BindToHandler::<_, IDataObject>(None, &BHID_DataObject) else { return };
+        let _ = SHDoDragDrop(None, &data, None::<&IDropSource>, DROPEFFECT_COPY);
+    })
+    .detach();
+}
+
 /// `template` with strftime fields filled in, without the characters Windows file names
 /// can't hold. A field chrono doesn't know leaves the template as typed.
 pub fn strftime(template: &str) -> String {

@@ -9,6 +9,7 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
 use gpui_kit::*;
 
+use crate::editor::DragFileOut;
 use crate::tiled::{PxRect, TiledImage};
 use crate::{export, mac, settings};
 
@@ -217,10 +218,9 @@ impl Render for Preview {
                         }
                     }))
                     .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
-                    .external_drag_payload(|drag: &DragOut, _, cx| {
+                    .drag_file_out(|drag: &DragOut, cx| {
                         let png = drag.0.upgrade()?.read(cx).png();
-                        let path = crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)?;
-                        Some(ExternalDragPayload::Files(FileDragPaths::new([(path, false)])))
+                        crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)
                     })
                     .child(
                         canvas(

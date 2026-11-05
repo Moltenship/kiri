@@ -2465,6 +2465,28 @@ pub fn write_temp(png: &[u8], name: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+pub trait DragFileOut: StatefulInteractiveElement + Sized {
+    /// Offers the file `path` writes to other apps once a drag of `T` leaves the window.
+    fn drag_file_out<T: 'static>(self, path: impl Fn(&T, &App) -> Option<PathBuf> + 'static) -> Self {
+        // GPUI hands a drag to the platform only on macOS.
+        #[cfg(windows)]
+        return self.on_drag_move(move |e: &DragMoveEvent<T>, window, cx| {
+            if Bounds::new(Point::default(), window.viewport_size()).contains(&e.event.position) {
+                return;
+            }
+            let file = path(e.drag(cx), cx);
+            cx.stop_active_drag(window);
+            if let Some(file) = file {
+                mac::drag_file_out(file, cx);
+            }
+        });
+        #[cfg(not(windows))]
+        self.external_drag_payload(move |drag: &T, _, cx| Some(ExternalDragPayload::Files(FileDragPaths::new([(path(drag, cx)?, false)]))))
+    }
+}
+
+impl<E: StatefulInteractiveElement> DragFileOut for E {}
+
 fn luminance(c: u32) -> f32 {
     let [r, g, b] = [(c >> 16) & 255, (c >> 8) & 255, c & 255].map(|v| v as f32);
     0.299 * r + 0.587 * g + 0.114 * b
@@ -2839,10 +2861,7 @@ impl Editor {
                     .child(Icon::new(IconName::GripVertical).small().text_color(theme.muted_foreground))
                     .tooltip(|window, cx| Tooltip::new("Drag the image into another app").build(window, cx))
                     .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
-                    .external_drag_payload(|drag: &DragOut, _, cx| {
-                        let path = drag.0.upgrade()?.read(cx).export_temp(cx)?;
-                        Some(ExternalDragPayload::Files(FileDragPaths::new([(path, false)])))
-                    }),
+                    .drag_file_out(|drag: &DragOut, cx| drag.0.upgrade()?.read(cx).export_temp(cx)),
             )
             .child(divider())
             .child(tools)

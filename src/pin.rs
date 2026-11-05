@@ -10,6 +10,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use tray_icon::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 
+use crate::editor::DragFileOut;
 use crate::mac;
 use crate::tiled::TiledImage;
 
@@ -324,10 +325,9 @@ impl Render for Pin {
                                 .cursor_grab()
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                                 .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
-                                .external_drag_payload(|drag: &DragOut, _, cx| {
+                                .drag_file_out(|drag: &DragOut, cx| {
                                     let png = drag.0.upgrade()?.read(cx).png();
-                                    let path = crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)?;
-                                    Some(ExternalDragPayload::Files(FileDragPaths::new([(path, false)])))
+                                    crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)
                                 }),
                         )
                         .child(tool("edit", IconName::Pencil).on_click(cx.listener(|this, _, w, cx| this.edit(w, cx))))
