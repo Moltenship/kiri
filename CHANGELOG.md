@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.10] - 2026-11-05
+
+### Changed
+- Style variants in the editor are icons, as in Shottr. Hover one to see its name. Blur and erase modes keep their names.
+
 ## [0.1.0-beta.9] - 2026-11-05
 
 ### Changed
