@@ -177,7 +177,12 @@ fn hwnd(window: &Window) -> Option<HWND> {
 pub fn make_overlay(window: &Window, display: u32) {
     let (Some(hwnd), Some((r, _))) = (hwnd(window), monitor_rect(display)) else { return };
     unsafe {
-        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_SHOWWINDOW);
+        // GPUI's pop-ups keep a border at the sides and bottom, which would inset the client
+        // area from the monitor's edges.
+        let style = WINDOW_STYLE(GetWindowLongPtrW(hwnd, GWL_STYLE) as u32);
+        SetWindowLongPtrW(hwnd, GWL_STYLE, ((style & !(WS_CAPTION | WS_THICKFRAME)) | WS_POPUP).0 as isize);
+        let flags = SWP_SHOWWINDOW | SWP_FRAMECHANGED;
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), r.left, r.top, r.right - r.left, r.bottom - r.top, flags);
         let _ = SetForegroundWindow(hwnd);
     }
 }
