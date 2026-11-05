@@ -2,6 +2,7 @@
 name = "kiri"
 version = "0.1.0-beta.1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 block2 = "0.6"

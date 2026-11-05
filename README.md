@@ -44,3 +44,7 @@ A bare binary runs fine for development. `scripts/release.sh` builds the signed 
 ## Contributing
 
 [docs/feature-map.md](docs/feature-map.md) lists what Kiri builds and in what order.
+
+## License
+
+[MIT](LICENSE)
