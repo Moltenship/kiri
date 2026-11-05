@@ -39,6 +39,8 @@ pub fn start(rect: (f32, f32, f32, f32), display: u32, up: bool, cx: &mut App) {
     }
     let s = crate::settings::get(cx);
     let (max_height, reverse, manual) = (s.scroll_max_height, s.scroll_reverse, s.scroll_manual);
+    // Each wheel step moves 20% to 60% of the area, so frames always overlap.
+    let stride = 0.1 + 0.1 * s.scroll_speed.clamp(1, 5) as f32;
     if !manual && !accessibility_trusted() {
         crate::toast::show("Scrolling capture needs Accessibility permission, or turn on Scroll by hand in Settings", cx);
         return;
@@ -47,7 +49,7 @@ pub fn start(rect: (f32, f32, f32, f32), display: u32, up: bool, cx: &mut App) {
     crate::grab_escape(true, cx);
     let hud = open_hud(rect, display, manual, cx);
     cx.spawn(async move |cx| {
-        let result = run(rect, up, reverse, manual, max_height, hud.as_ref().map(|h| &h.1), cx).await;
+        let result = run(rect, up, reverse, manual, max_height, stride, hud.as_ref().map(|h| &h.1), cx).await;
         let (result, note) = result.unzip();
         let image = match result {
             Some((w, h, bgra, scale)) => {
@@ -91,6 +93,7 @@ async fn run(
     reverse: bool,
     manual: bool,
     max_height: u32,
+    stride: f32,
     hud: Option<&Entity<Hud>>,
     cx: &mut AsyncApp,
 ) -> Option<((u32, u32, Vec<u8>, f32), Option<&'static str>)> {
@@ -116,7 +119,7 @@ async fn run(
     };
     set_hud(stitcher.height(), false, cx);
 
-    let step = (rect.3 * 0.4).round().max(1.) as i32;
+    let step = (rect.3 * stride).round().max(1.) as i32;
     let delta = if up != reverse { step } else { -step };
     let mut still = 0;
     let mut note = None;

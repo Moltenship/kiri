@@ -71,7 +71,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Manual mode as the fallback for apps that ignore synthetic scrolling: Settings → Scroll by hand. The user scrolls and Kiri stitches, so it needs no Accessibility. When frames stop overlapping, the HUD asks to scroll back and stitching resumes from the last good frame.
 - Stitch by finding the overlap between frames. Ignore sticky headers and footers. Don't assume a fixed scroll step: smooth scrolling and inertia make it vary.
 - Show progress. A tall result must not freeze the editor.
-- Say why it stopped when it is not obvious: max height reached, nothing scrolled (with the Reverse scroll direction hint), or frames that stopped overlapping. No speed setting: each step waits until the frame settles, so the pace adapts to the app.
+- Say why it stopped when it is not obvious: max height reached, nothing scrolled (with the Reverse scroll direction hint), or frames that stopped overlapping. Each step waits until the frame settles. A Speed slider sets how far each step scrolls, from 20% to 60% of the area, so frames always overlap.
 - macOS needs Accessibility. On Windows, wheel events go to the window under the cursor, and elevated windows ignore input from non-elevated apps.
 
 ### 05 Text and QR recognition
@@ -181,6 +181,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Settings live in a plain config file that can be imported and exported.
 - Expose the screenshot library in the UI. Cursor capture is left out until a capture path can include the cursor.
 - Appearance: System, Light, or Dark, picked from small drawings of a Kiri window. It sets the app's appearance, so blurred window backgrounds follow it too.
+- A choice that changes how something looks is picked from small drawings: Appearance, Show in (editor or thumbnail), and Window background. Numbers without natural steps, such as max scroll height, are typed in.
 - Dropped from the alternative: uploading, license, splash, diagnostics.
 - Consider WebP as a save format.
 

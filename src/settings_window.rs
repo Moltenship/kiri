@@ -7,6 +7,7 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
@@ -81,7 +82,9 @@ pub struct SettingsWindow {
     search: Entity<InputState>,
     solid: Entity<ColorPickerState>,
     file_name: Entity<InputState>,
-    _subscriptions: [Subscription; 6],
+    max_height: Entity<InputState>,
+    speed: Entity<SliderState>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl SettingsWindow {
@@ -92,7 +95,11 @@ impl SettingsWindow {
         let file_name = cx.new(|cx| InputState::new(window, cx).default_value(template).placeholder(settings::FILE_NAME));
         let color = settings::get(cx).window_background_color;
         let solid = cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(color)));
-        let subscriptions = [
+        let height = settings::get(cx).scroll_max_height;
+        let max_height = cx.new(|cx| InputState::new(window, cx).default_value(height.to_string()));
+        let speed = settings::get(cx).scroll_speed as f32;
+        let speed = cx.new(|_| SliderState::new().min(1.).max(5.).step(1.).default_value(speed));
+        let subscriptions = vec![
             // Closing the window mid-recording skips the recorder's focus-out, which turns them back on.
             cx.on_release(|_, cx| {
                 crate::reload_hotkeys(cx);
@@ -105,6 +112,12 @@ impl SettingsWindow {
                 }
                 if this.solid.read(cx).value().map(rgb_u32) != Some(s.window_background_color) {
                     this.solid.update(cx, |picker, cx| picker.set_value(rgb(s.window_background_color), window, cx));
+                }
+                if parse_height(&this.max_height.read(cx).value()) != Some(s.scroll_max_height) && !this.max_height.focus_handle(cx).is_focused(window) {
+                    this.max_height.update(cx, |input, cx| input.set_value(s.scroll_max_height.to_string(), window, cx));
+                }
+                if this.speed.read(cx).value().start() != s.scroll_speed as f32 {
+                    this.speed.update(cx, |slider, cx| slider.set_value(s.scroll_speed as f32, window, cx));
                 }
                 cx.notify();
             }),
@@ -127,9 +140,34 @@ impl SettingsWindow {
                     settings::update(cx, |s| s.window_background_color = c);
                 }
             }),
+            cx.subscribe_in(&max_height, window, |_, input, e: &InputEvent, window, cx| match e {
+                InputEvent::Change => {
+                    if let Some(v) = parse_height(&input.read(cx).value()) {
+                        settings::update(cx, |s| s.scroll_max_height = v);
+                    }
+                }
+                InputEvent::Blur => {
+                    let v = settings::get(cx).scroll_max_height.to_string();
+                    input.update(cx, |input, cx| input.set_value(v, window, cx));
+                }
+                _ => {}
+            }),
+            cx.subscribe(&speed, |_, _, e: &SliderEvent, cx| {
+                let (SliderEvent::Change(v) | SliderEvent::Release(v)) = e;
+                let v = v.start().round() as u32;
+                if settings::get(cx).scroll_speed != v {
+                    settings::update(cx, |s| s.scroll_speed = v);
+                }
+            }),
         ];
-        Self { focus: cx.focus_handle(), page: 0, search, solid, file_name, _subscriptions: subscriptions }
+        Self { focus: cx.focus_handle(), page: 0, search, solid, file_name, max_height, speed, _subscriptions: subscriptions }
     }
+}
+
+/// Short heights would end most captures at the first screen.
+fn parse_height(text: &str) -> Option<u32> {
+    let digits: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    digits.parse().ok().filter(|v| (1_000..=1_000_000).contains(v))
 }
 
 fn rgb_u32(c: Hsla) -> u32 {
@@ -258,15 +296,8 @@ fn button(id: &'static str, label: &'static str, on_click: impl Fn(&mut App) + '
 }
 
 const SAVE_FORMATS: &[(bool, &str)] = &[(false, "PNG"), (true, "Auto (PNG or JPEG)")];
-const PREVIEWS: &[(Preview, &str)] = &[(Preview::Editor, "Editor"), (Preview::Thumbnail, "Thumbnail")];
 const HIDE_AFTER: &[(u32, &str)] = &[(0, "Manually"), (3, "After 3 seconds"), (5, "After 5 seconds"), (10, "After 10 seconds")];
 const SELECTIONS: &[(AreaSelection, &str)] = &[(AreaSelection::System, "macOS"), (AreaSelection::Kiri, "Kiri")];
-const BACKGROUNDS: &[(WindowBackground, &str)] = &[
-    (WindowBackground::Transparent, "Transparent"),
-    (WindowBackground::Wallpaper, "Wallpaper"),
-    (WindowBackground::Solid, "Solid color"),
-    (WindowBackground::TrimShadow, "Trim shadow"),
-];
 const CMD_Q: &[(settings::CmdQ, &str)] = &[
     (settings::CmdQ::Ask, "Ask"),
     (settings::CmdQ::Quit, "Quits Kiri"),
@@ -317,7 +348,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                     row("Show", toggle("show", |s| s.after_show, |s, v| s.after_show = v, cx)),
                     row("Copy to clipboard", toggle("copy", |s| s.after_copy, |s, v| s.after_copy = v, cx)),
                     row("Save to folder", toggle("save", |s| s.after_save, |s, v| s.after_save = v, cx)),
-                    row("Show in", choice("show-in", PREVIEWS, |s| s.area_preview, |s, v| s.area_preview = v, cx))
+                    row("Show in", preview_picker(cx))
                         .description("The thumbnail is a small card with Copy, Save, Edit, and Pin."),
                     row("Hide thumbnail", choice("hide", HIDE_AFTER, |s| s.thumbnail_seconds, |s, v| s.thumbnail_seconds = v, cx))
                         .disabled(now.area_preview != Preview::Thumbnail),
@@ -344,7 +375,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
     }
 }
 
-fn capture(solid: &Entity<ColorPickerState>, cx: &App) -> Page {
+fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, speed: &Entity<SliderState>, cx: &App) -> Page {
     let now = settings::get(cx);
     Page {
         title: "Capture",
@@ -370,7 +401,7 @@ fn capture(solid: &Entity<ColorPickerState>, cx: &App) -> Page {
             group(
                 "Windows",
                 [
-                    row("Window background", choice("background", BACKGROUNDS, |s| s.window_background, |s, v| s.window_background = v, cx)),
+                    row("Window background", background_picker(cx)),
                     row("Solid color", ColorPicker::new(solid).small().anchor(Anchor::TopRight))
                         .disabled(now.window_background != WindowBackground::Solid),
                 ],
@@ -385,17 +416,19 @@ fn capture(solid: &Entity<ColorPickerState>, cx: &App) -> Page {
             group(
                 "Scrolling capture",
                 [
+                    row("Max height", Input::new(max_height).small().w(px(110.)).suffix("px")),
                     row(
-                        "Max height",
-                        preset(
-                            "max-height",
-                            &[10_000, 20_000, 50_000, 100_000],
-                            |v| format!("{} px", v.to_string().as_bytes().rchunks(3).rev().map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(" ")),
-                            |s| s.scroll_max_height,
-                            |s, v| s.scroll_max_height = v,
-                            cx,
-                        ),
-                    ),
+                        "Speed",
+                        h_flex()
+                            .gap_2()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("Slow")
+                            .child(div().w(px(160.)).child(Slider::new(speed).horizontal()))
+                            .child("Fast"),
+                    )
+                    .description("Faster scrolls further between frames. Slow down for pages that load as you scroll.")
+                    .disabled(now.scroll_manual),
                     row("Scroll by hand", toggle("manual", |s| s.scroll_manual, |s, v| s.scroll_manual = v, cx))
                         .description("Kiri stitches while you scroll, for apps that ignore automatic scrolling. Doesn't need Accessibility."),
                     row("Reverse scroll direction", toggle("reverse", |s| s.scroll_reverse, |s, v| s.scroll_reverse = v, cx))
@@ -708,7 +741,7 @@ fn advanced(cx: &App) -> Page {
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let pages = [general(&self.file_name, cx), capture(&self.solid, cx), editor(cx), hotkeys(window, cx), advanced(cx)];
+        let pages = [general(&self.file_name, cx), capture(&self.solid, &self.max_height, &self.speed, cx), editor(cx), hotkeys(window, cx), advanced(cx)];
         let query = self.search.read(cx).value().trim().to_lowercase();
         let theme = cx.theme().clone();
 
@@ -866,35 +899,24 @@ fn card(i: usize, title: Option<SharedString>, group: Group, theme: &gpui_kit::c
 const APPEARANCES: [(settings::Appearance, &str); 3] =
     [(settings::Appearance::System, "System"), (settings::Appearance::Light, "Light"), (settings::Appearance::Dark, "Dark")];
 
-/// System, Light, and Dark as small drawings of a Kiri window, `width` wide each.
-pub fn appearance_picker(width: f32, cx: &App) -> AnyElement {
-    let now = settings::get(cx).appearance;
+/// Options as small drawings `width` wide, each with its label underneath.
+fn pictures<T: Copy + PartialEq + 'static>(
+    options: impl IntoIterator<Item = (T, &'static str, AnyElement)>,
+    now: T,
+    width: f32,
+    pick: impl Fn(T, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
     let theme = cx.theme();
-    let height = (width * 0.64).round();
+    let pick = Rc::new(pick);
+    // Labels can be wider than the drawings, so every column takes the same width.
     h_flex()
-        .gap(px((width * 0.1).round()))
-        .children(APPEARANCES.into_iter().map(|(appearance, label)| {
-            let selected = appearance == now;
-            let drawing = match appearance {
-                settings::Appearance::Light => wireframe(false, width, height).into_any_element(),
-                settings::Appearance::Dark => wireframe(true, width, height).into_any_element(),
-                settings::Appearance::System => {
-                    let half = |dark: bool| {
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left(px(if dark { width / 2. } else { 0. }))
-                            .w(px(width / 2.))
-                            .h(px(height))
-                            .overflow_hidden()
-                            .child(div().absolute().top_0().left(px(if dark { -width / 2. } else { 0. })).child(wireframe(dark, width, height)))
-                    };
-                    div().relative().w(px(width)).h(px(height)).child(half(false)).child(half(true))
-                    .into_any_element()
-                }
-            };
+        .children(options.into_iter().map(|(value, label, drawing)| {
+            let selected = value == now;
+            let pick = pick.clone();
             v_flex()
                 .id(label)
+                .w(px(width + 18.))
                 .items_center()
                 .gap_1p5()
                 .cursor_pointer()
@@ -906,13 +928,106 @@ pub fn appearance_picker(width: f32, cx: &App) -> AnyElement {
                         .border_color(if selected { theme.ring } else { transparent_black() })
                         .child(drawing),
                 )
-                .child(div().text_xs().text_color(if selected { theme.foreground } else { theme.muted_foreground }).child(label))
-                .on_click(move |_, _, cx| {
-                    settings::update(cx, |s| s.appearance = appearance);
-                    crate::apply_appearance(cx);
-                })
+                .child(div().text_xs().whitespace_nowrap().text_color(if selected { theme.foreground } else { theme.muted_foreground }).child(label))
+                .on_click(move |_, _, cx| pick(value, cx))
         }))
         .into_any_element()
+}
+
+/// System, Light, and Dark as small drawings of a Kiri window, `width` wide each.
+pub fn appearance_picker(width: f32, cx: &App) -> AnyElement {
+    let height = (width * 0.64).round();
+    let options = APPEARANCES.into_iter().map(|(appearance, label)| {
+        let drawing = match appearance {
+            settings::Appearance::Light => wireframe(false, width, height).into_any_element(),
+            settings::Appearance::Dark => wireframe(true, width, height).into_any_element(),
+            settings::Appearance::System => {
+                let half = |dark: bool| {
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left(px(if dark { width / 2. } else { 0. }))
+                        .w(px(width / 2.))
+                        .h(px(height))
+                        .overflow_hidden()
+                        .child(div().absolute().top_0().left(px(if dark { -width / 2. } else { 0. })).child(wireframe(dark, width, height)))
+                };
+                div().relative().w(px(width)).h(px(height)).child(half(false)).child(half(true)).into_any_element()
+            }
+        };
+        (appearance, label, drawing)
+    });
+    pictures(options, settings::get(cx).appearance, width, |appearance, cx| {
+        settings::update(cx, |s| s.appearance = appearance);
+        crate::apply_appearance(cx);
+    }, cx)
+}
+
+const PICTURE: (f32, f32) = (64., 41.);
+
+fn wallpaper() -> Background {
+    linear_gradient(150., linear_color_stop(rgb(0x2F6FB5), 0.), linear_color_stop(rgb(0x7CC8B0), 1.))
+}
+
+/// A light window with its traffic lights, `w` wide.
+fn mini_window(w: f32, h: f32) -> Div {
+    let dot = |color: u32| div().size(px(4.)).rounded_full().bg(rgb(color));
+    div()
+        .w(px(w))
+        .h(px(h))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(rgb(0xD4D4D4))
+        .bg(rgb(0xF5F5F5))
+        .child(h_flex().gap(px(2.5)).p(px(4.)).child(dot(0xFF5F57)).child(dot(0xFEBC2E)).child(dot(0x28C840)))
+}
+
+fn background_picker(cx: &App) -> AnyElement {
+    let (w, h) = PICTURE;
+    let now = settings::get(cx);
+    let tile = || div().relative().w(px(w)).h(px(h)).rounded(px(6.)).overflow_hidden();
+    let window = || mini_window(w, h).absolute().left(px(w * 0.22)).top(px(h * 0.3)).shadow_md();
+    let cell = 5.;
+    let checks = v_flex().children((0..(h / cell).ceil() as usize).map(|y| {
+        h_flex().children((0..(w / cell).ceil() as usize).map(move |x| {
+            div().size(px(cell)).flex_none().bg(rgb(if (x + y) % 2 == 0 { 0xFFFFFF } else { 0xE4E4E4 }))
+        }))
+    }));
+    let options = [
+        (WindowBackground::Transparent, "Transparent", tile().border_1().border_color(rgb(0xDCDCDC)).child(checks).child(window())),
+        (WindowBackground::Wallpaper, "Wallpaper", tile().bg(wallpaper()).child(window())),
+        (WindowBackground::Solid, "Solid color", tile().bg(rgb(now.window_background_color)).border_1().border_color(rgb(0xDCDCDC)).child(window())),
+        (WindowBackground::TrimShadow, "Trim shadow", tile().child(mini_window(w, h))),
+    ];
+    pictures(options.map(|(v, l, d)| (v, l, d.into_any_element())), now.window_background, w, |v, cx| {
+        settings::update(cx, |s| s.window_background = v)
+    }, cx)
+}
+
+/// The editor opens over the desktop; the thumbnail waits in the corner.
+fn preview_picker(cx: &App) -> AnyElement {
+    let (w, h) = PICTURE;
+    let screen = || div().relative().w(px(w)).h(px(h)).rounded(px(6.)).overflow_hidden().bg(wallpaper());
+    let shot = |w: f32, h: f32| div().w(px(w)).h(px(h)).rounded(px(2.)).bg(rgb(0xBFD3EA));
+    let editor = mini_window(w * 0.76, h * 0.8)
+        .absolute()
+        .left(px(w * 0.12))
+        .top(px(h * 0.1))
+        .shadow_md()
+        .child(div().px(px(5.)).child(shot(w * 0.76 - 12., h * 0.8 - 18.)));
+    let thumbnail = div()
+        .absolute()
+        .right(px(4.))
+        .bottom(px(4.))
+        .p(px(2.))
+        .rounded(px(3.))
+        .bg(rgb(0xFFFFFF))
+        .shadow_md()
+        .child(shot(18., 12.));
+    let options = [(Preview::Editor, "Editor", screen().child(editor)), (Preview::Thumbnail, "Thumbnail", screen().child(thumbnail))];
+    pictures(options.map(|(v, l, d)| (v, l, d.into_any_element())), settings::get(cx).area_preview, w, |v, cx| {
+        settings::update(cx, |s| s.area_preview = v)
+    }, cx)
 }
 
 /// A settings window in outline: a sidebar, and a group of rows with one switch on.

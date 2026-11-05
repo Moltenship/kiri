@@ -224,6 +224,8 @@ pub struct Settings {
     pub window_background_color: u32,
     pub delay_seconds: u32,
     pub scroll_max_height: u32,
+    /// 1 to 5; faster scrolls further between frames.
+    pub scroll_speed: u32,
     pub scroll_reverse: bool,
     /// The user scrolls; Kiri only watches and stitches.
     pub scroll_manual: bool,
@@ -267,6 +269,7 @@ impl Default for Settings {
             window_background_color: 0xF2F2F7,
             delay_seconds: 3,
             scroll_max_height: 20_000,
+            scroll_speed: 3,
             scroll_reverse: false,
             scroll_manual: false,
             automation: false,
