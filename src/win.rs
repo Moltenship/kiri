@@ -23,8 +23,6 @@ use windows::Win32::UI::Shell::{DROPFILES, FOLDERID_Desktop, KF_FLAG_DEFAULT, SH
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::w;
 
-pub const NOT_YET: &str = "Not available on Windows yet";
-
 /// One display frozen at capture time, as tightly packed BGRA.
 pub struct Shot {
     pub display: u32,
@@ -401,8 +399,15 @@ fn drop_files(file: &Path) -> Vec<u8> {
 
 pub fn adopt_full_screen_item(_title: &str) {}
 
-pub fn print_png(_png: &[u8], _window: &Window) {
-    eprintln!("kiri: printing is {NOT_YET}");
+mod print;
+
+pub fn print_png(png: &[u8], window: &Window) {
+    let (png, over) = (png.to_vec(), hwnd(window).map(|h| h.0 as usize));
+    std::thread::spawn(move || {
+        if let Err(err) = print::print(&png, over) {
+            eprintln!("kiri: print: {err}");
+        }
+    });
 }
 
 /// The clipboard's PNG as premultiplied BGRA plus its pixels per logical unit.
