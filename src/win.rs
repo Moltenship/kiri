@@ -650,3 +650,5 @@ pub mod scrolling;
 
 pub mod ocr;
 
+pub mod update;
+

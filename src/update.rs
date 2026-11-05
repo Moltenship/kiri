@@ -1,7 +1,8 @@
 //! Updates from GitHub releases: a daily check marks the menu bar icon when a newer release is
-//! out, and Update downloads it, verifies its signature, swaps the bundle, and relaunches.
+//! out, and Update downloads it, swaps it in, and relaunches. On macOS only a build signed with
+//! Kiri's Developer ID may replace the app.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -11,10 +12,10 @@ use gpui_kit::{App, Global};
 
 /// Every release is published as Latest; the release list isn't sorted by version.
 const LATEST: &str = "https://api.github.com/repos/Moltenship/kiri/releases/latest";
-const ASSET: &str = "Kiri.dmg";
-/// Only a build signed by Kiri's own Developer ID may replace the running app.
-const REQUIREMENT: &str =
-    r#"=anchor apple generic and identifier "sh.kiri.Kiri" and certificate leaf[subject.OU] = "Q9SDRFKBC6""#;
+
+#[cfg(windows)]
+use crate::mac::update as sys;
+pub use sys::bundle;
 
 #[derive(Default)]
 pub struct Update {
@@ -31,7 +32,7 @@ impl Global for Update {}
 pub struct Release {
     pub version: String,
     url: String,
-    /// Of the DMG, in bytes, for the download's percentage.
+    /// Of the download, in bytes, for its percentage.
     size: u64,
 }
 
@@ -49,13 +50,6 @@ fn say(version: &str, step: Step, cx: &mut App) {
         Step::Install => (format!("Installing Kiri {version}…"), None),
     };
     crate::toast::progress(text, fraction, cx);
-}
-
-/// The `.app` Kiri runs from; `None` for a bare binary, which can't update itself.
-pub fn bundle() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let app = exe.parent()?.parent()?.parent()?;
-    (app.extension()? == "app").then(|| app.to_path_buf())
 }
 
 pub fn start(cx: &mut App) {
@@ -78,13 +72,14 @@ pub fn start(cx: &mut App) {
 pub fn check(manual: bool, cx: &mut App) {
     let Some(app) = bundle() else {
         if manual {
-            crate::toast::show("Updates need Kiri.app; this build runs on its own", cx);
+            let text = crate::platform_text("Updates need Kiri.app; this build runs on its own", "Updates need Kiri from its release zip; this build runs on its own");
+            crate::toast::show(text, cx);
         }
         return;
     };
-    if app.to_string_lossy().contains("/AppTranslocation/") {
+    if let Some(why) = sys::misplaced(&app) {
         if manual {
-            crate::toast::show("Move Kiri to Applications to get updates", cx);
+            crate::toast::show(why, cx);
         }
         return;
     }
@@ -131,7 +126,7 @@ pub fn install(cx: &mut App) {
         let work = cx.background_executor().spawn(async move {
             let staged = download(&release, &tx)?;
             let _ = tx.unbounded_send(Step::Install);
-            swap(&staged)
+            sys::swap(&staged)
         });
         // Ends when `work` finishes and drops `tx`.
         while let Some(step) = steps.next().await {
@@ -147,9 +142,7 @@ pub fn install(cx: &mut App) {
                 crate::toast::show(format!("Couldn't update: {err}"), cx);
                 return;
             }
-            // `open` waits for this process to exit, or it would just activate the running copy.
-            let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.1; done; open \"$0\"", std::process::id());
-            let _ = Command::new("/bin/sh").args(["-c", &script]).arg(&app).spawn();
+            sys::relaunch(&app);
             cx.quit();
         });
     })
@@ -169,32 +162,32 @@ fn latest() -> Result<Option<Release>, String> {
         browser_download_url: String,
         size: u64,
     }
-    let body = run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", LATEST]))?;
+    let body = run(sys::curl().args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", LATEST]))?;
     let release: Published = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
     let version = release.tag_name.trim_start_matches('v').to_string();
     if !newer(&version, env!("CARGO_PKG_VERSION")) {
         return Ok(None);
     }
-    let asset = release.assets.into_iter().find(|a| a.name == ASSET).ok_or(format!("the release has no {ASSET}"))?;
+    let asset = release.assets.into_iter().find(|a| a.name == sys::ASSET).ok_or(format!("the release has no {}", sys::ASSET))?;
     Ok(Some(Release { version, url: asset.browser_download_url, size: asset.size }))
 }
 
-/// Downloads the release's DMG, copies Kiri out of it, and checks that Kiri's Developer ID signed it.
+/// Downloads the release's asset and unpacks Kiri from it.
 fn download(release: &Release, steps: &UnboundedSender<Step>) -> Result<PathBuf, String> {
-    let dir = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Caches/Kiri/Update");
+    let dir = sys::cache();
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let dmg = dir.join(ASSET);
-    let mut curl = Command::new("/usr/bin/curl")
+    let archive = dir.join(sys::ASSET);
+    let mut curl = sys::curl()
         .args(["-fsSL", "--max-time", "600", "-o"])
-        .arg(&dmg)
+        .arg(&archive)
         .arg(&release.url)
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
     let mut shown = None;
     while curl.try_wait().map_err(|e| e.to_string())?.is_none() {
-        let got = std::fs::metadata(&dmg).map_or(0, |m| m.len());
+        let got = std::fs::metadata(&archive).map_or(0, |m| m.len());
         let percent = (release.size > 0).then(|| (got * 100 / release.size).min(100));
         if percent != shown {
             shown = percent;
@@ -207,35 +200,10 @@ fn download(release: &Release, steps: &UnboundedSender<Step>) -> Result<PathBuf,
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
     let _ = steps.unbounded_send(Step::Check);
-    let volume = dir.join("volume");
-    run(Command::new("/usr/bin/hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"]).arg(&volume).arg(&dmg))?;
-    let staged = dir.join("Kiri.app");
-    let copied = run(Command::new("/usr/bin/ditto").arg(volume.join("Kiri.app")).arg(&staged));
-    let _ = run(Command::new("/usr/bin/hdiutil").args(["detach", "-force"]).arg(&volume));
-    copied?;
-    run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict", "-R", REQUIREMENT]).arg(&staged))
-        .map_err(|_| "the download isn't signed by Kiri".to_string())?;
-    Ok(staged)
+    sys::unpack(&dir, &archive)
 }
 
-/// Swaps the running bundle for `staged`. The old one goes back in place if the move fails.
-fn swap(staged: &Path) -> Result<(), String> {
-    let app = bundle().ok_or("not running from Kiri.app")?;
-    let old = app.with_file_name(".Kiri.app.old");
-    let _ = std::fs::remove_dir_all(&old);
-    std::fs::rename(&app, &old).map_err(|e| e.to_string())?;
-    if let Err(e) = std::fs::rename(staged, &app)
-        .or_else(|_| run(Command::new("/usr/bin/ditto").arg(staged).arg(&app)).map(drop).map_err(std::io::Error::other))
-    {
-        let _ = std::fs::remove_dir_all(&app);
-        let _ = std::fs::rename(&old, &app);
-        return Err(e.to_string());
-    }
-    let _ = std::fs::remove_dir_all(&old);
-    Ok(())
-}
-
-fn run(command: &mut Command) -> Result<Vec<u8>, String> {
+pub(crate) fn run(command: &mut Command) -> Result<Vec<u8>, String> {
     let out = command.output().map_err(|e| e.to_string())?;
     match out.status.success() {
         true => Ok(out.stdout),
@@ -260,6 +228,74 @@ fn newer(a: &str, b: &str) -> bool {
             _ => false,
         },
         order => order.is_gt(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod sys {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    use super::run;
+
+    pub const ASSET: &str = "Kiri.dmg";
+    /// Only a build signed by Kiri's own Developer ID may replace the running app.
+    const REQUIREMENT: &str =
+        r#"=anchor apple generic and identifier "sh.kiri.Kiri" and certificate leaf[subject.OU] = "Q9SDRFKBC6""#;
+
+    /// The `.app` Kiri runs from; `None` for a bare binary, which can't update itself.
+    pub fn bundle() -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        let app = exe.parent()?.parent()?.parent()?;
+        (app.extension()? == "app").then(|| app.to_path_buf())
+    }
+
+    pub fn misplaced(app: &Path) -> Option<&'static str> {
+        app.to_string_lossy().contains("/AppTranslocation/").then_some("Move Kiri to Applications to get updates")
+    }
+
+    pub fn curl() -> Command {
+        Command::new("/usr/bin/curl")
+    }
+
+    pub fn cache() -> PathBuf {
+        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Caches/Kiri/Update")
+    }
+
+    /// Copies Kiri out of the DMG and checks that Kiri's Developer ID signed it.
+    pub fn unpack(dir: &Path, dmg: &Path) -> Result<PathBuf, String> {
+        let volume = dir.join("volume");
+        run(Command::new("/usr/bin/hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"]).arg(&volume).arg(dmg))?;
+        let staged = dir.join("Kiri.app");
+        let copied = run(Command::new("/usr/bin/ditto").arg(volume.join("Kiri.app")).arg(&staged));
+        let _ = run(Command::new("/usr/bin/hdiutil").args(["detach", "-force"]).arg(&volume));
+        copied?;
+        run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict", "-R", REQUIREMENT]).arg(&staged))
+            .map_err(|_| "the download isn't signed by Kiri".to_string())?;
+        Ok(staged)
+    }
+
+    /// Swaps the running bundle for `staged`. The old one goes back in place if the move fails.
+    pub fn swap(staged: &Path) -> Result<(), String> {
+        let app = bundle().ok_or("not running from Kiri.app")?;
+        let old = app.with_file_name(".Kiri.app.old");
+        let _ = std::fs::remove_dir_all(&old);
+        std::fs::rename(&app, &old).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::rename(staged, &app)
+            .or_else(|_| run(Command::new("/usr/bin/ditto").arg(staged).arg(&app)).map(drop).map_err(std::io::Error::other))
+        {
+            let _ = std::fs::remove_dir_all(&app);
+            let _ = std::fs::rename(&old, &app);
+            return Err(e.to_string());
+        }
+        let _ = std::fs::remove_dir_all(&old);
+        Ok(())
+    }
+
+    /// `open` waits for this process to exit, or it would just activate the running copy.
+    pub fn relaunch(app: &Path) {
+        let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.1; done; open \"$0\"", std::process::id());
+        let _ = Command::new("/bin/sh").args(["-c", &script]).arg(app).spawn();
     }
 }
 
