@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.7] - 2026-11-05
+
+### Fixed
+- Capture Area coordinates move with the pointer instead of trailing it, and look like the ones macOS shows for ⇧⌘4.
+
 ## [0.1.0-beta.6] - 2026-11-05
 
 ### Changed
