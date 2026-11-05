@@ -717,32 +717,28 @@ fn stress_image(w: u32, h: u32) -> TiledImage {
 }
 
 /// Viewfinder corners, drawn at 2× for the 18 pt menu bar slot.
+/// The app icon reduced to a template: a selection with handles around a peak and the sun.
 fn tray_glyph() -> tray_icon::Icon {
-    use tiny_skia::{LineCap, Paint, PathBuilder, Pixmap, Stroke, Transform};
+    use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
     let n = 36;
     let mut pixmap = Pixmap::new(n, n).expect("icon pixmap");
     let mut paint = Paint::default();
     paint.set_color_rgba8(0, 0, 0, 255);
     paint.anti_alias = true;
-    let stroke = Stroke {
-        width: 3.2,
-        line_cap: LineCap::Round,
-        ..Stroke::default()
-    };
-    let (a, b, l) = (6., 30., 8.);
+    // Drawn in a unit box, y up.
+    let unit = Transform::from_row(n as f32, 0., 0., -(n as f32), 0., n as f32);
+    let frame = PathBuilder::from_rect(Rect::from_ltrb(0.1, 0.16, 0.9, 0.84).expect("frame"));
+    pixmap.stroke_path(&frame, &paint, &Stroke { width: 0.085, ..Stroke::default() }, unit, None);
     let mut pb = PathBuilder::new();
-    for (x, y, dx, dy) in [
-        (a, a, 1., 1.),
-        (b, a, -1., 1.),
-        (a, b, 1., -1.),
-        (b, b, -1., -1.),
-    ] {
-        pb.move_to(x, y + dy * l);
-        pb.line_to(x, y);
-        pb.line_to(x + dx * l, y);
+    for (x, y) in [(0.1, 0.16), (0.9, 0.16), (0.1, 0.84), (0.9, 0.84)] {
+        pb.push_circle(x, y, 0.09);
     }
-    pb.push_circle(18., 18., 3.5);
-    let path = pb.finish().expect("icon path");
-    pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    pb.push_circle(0.67, 0.67, 0.07);
+    pb.move_to(0.22, 0.27);
+    for (x, y) in [(0.44, 0.58), (0.56, 0.43), (0.64, 0.51), (0.8, 0.27)] {
+        pb.line_to(x, y);
+    }
+    pb.close();
+    pixmap.fill_path(&pb.finish().expect("icon path"), &paint, FillRule::Winding, unit, None);
     tray_icon::Icon::from_rgba(pixmap.take(), n, n).expect("icon rgba")
 }
