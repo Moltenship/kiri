@@ -9,7 +9,8 @@ use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::{App, Global};
 
-const RELEASES: &str = "https://api.github.com/repos/Moltenship/kiri/releases?per_page=10";
+/// Every release is published as Latest; the release list isn't sorted by version.
+const LATEST: &str = "https://api.github.com/repos/Moltenship/kiri/releases/latest";
 const ASSET: &str = "Kiri.dmg";
 /// Only a build signed by Kiri's own Developer ID may replace the running app.
 const REQUIREMENT: &str =
@@ -160,7 +161,6 @@ fn latest() -> Result<Option<Release>, String> {
     #[derive(serde::Deserialize)]
     struct Published {
         tag_name: String,
-        draft: bool,
         assets: Vec<Asset>,
     }
     #[derive(serde::Deserialize)]
@@ -169,17 +169,14 @@ fn latest() -> Result<Option<Release>, String> {
         browser_download_url: String,
         size: u64,
     }
-    let body = run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", RELEASES]))?;
-    let releases: Vec<Published> = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
-    Ok(releases
-        .into_iter()
-        .filter(|r| !r.draft)
-        .filter_map(|r| {
-            let asset = r.assets.into_iter().find(|a| a.name == ASSET)?;
-            Some(Release { version: r.tag_name.trim_start_matches('v').to_string(), url: asset.browser_download_url, size: asset.size })
-        })
-        .filter(|r| newer(&r.version, env!("CARGO_PKG_VERSION")))
-        .max_by(|a, b| if newer(&a.version, &b.version) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }))
+    let body = run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", LATEST]))?;
+    let release: Published = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+    let version = release.tag_name.trim_start_matches('v').to_string();
+    if !newer(&version, env!("CARGO_PKG_VERSION")) {
+        return Ok(None);
+    }
+    let asset = release.assets.into_iter().find(|a| a.name == ASSET).ok_or(format!("the release has no {ASSET}"))?;
+    Ok(Some(Release { version, url: asset.browser_download_url, size: asset.size }))
 }
 
 /// Downloads the release's DMG, copies Kiri out of it, and checks that Kiri's Developer ID signed it.

@@ -2,6 +2,13 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0] - 2026-11-05
+
+The first stable release.
+
+### Fixed
+- Updates find the newest release, however many come out in one day.
+
 ## [0.1.0-beta.11] - 2026-11-05
 
 ### Added

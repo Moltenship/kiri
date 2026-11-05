@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Moltenship/kiri/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Moltenship/kiri?include_prereleases&label=release&color=7b68a6"></a>
+  <a href="https://github.com/Moltenship/kiri/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Moltenship/kiri?label=release&color=7b68a6"></a>
   <img alt="macOS 15.2+ on Apple Silicon" src="https://img.shields.io/badge/macOS-15.2%2B%20on%20Apple%20Silicon-555">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Moltenship/kiri?color=555"></a>
 </p>
@@ -34,7 +34,7 @@
 Kiri captures an area, a window, a screen, or a page that scrolls, and opens it in an editor for arrows, text, blur, and measurements. Press ⇧⌘2, drag, then press Esc, and the image is on the clipboard.
 
 > [!NOTE]
-> Kiri is in beta. Please [open an issue](https://github.com/Moltenship/kiri/issues) when something breaks.
+> Please [open an issue](https://github.com/Moltenship/kiri/issues) when something breaks.
 
 ## Kiri and Shottr
 
