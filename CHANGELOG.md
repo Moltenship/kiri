@@ -8,6 +8,7 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 - Windows: capture a window or the active window, even when it's covered.
 - Windows: Capture Text, Recognize Text, and Blur Text read text with Windows' own text recognition, in the languages installed in Windows.
 - Windows: Launch at Login.
+- Windows: Scrolling Capture, down or up, by itself or by hand.
 - Windows: the first-run window, with Ctrl+Shift+1 and Ctrl+Shift+2 next to Snipping Tool or Print Screen in its place.
 - Windows: Settings warns when a hotkey is one of Windows' own, and Use Print Screen gives PrtScn to Capture Area in place of Snipping Tool.
 

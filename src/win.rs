@@ -224,9 +224,15 @@ fn ex_style(hwnd: HWND, on: WINDOW_EX_STYLE, off: WINDOW_EX_STYLE) {
 }
 
 /// Floating chrome-less windows: toasts, thumbnails, and pins.
-pub fn make_floating(window: &Window, _level: Level, _shadow: bool, ignores_mouse: bool) {
+pub fn make_floating(window: &Window, _level: Level, shadow: bool, ignores_mouse: bool) {
+    use windows::Win32::Graphics::Dwm::{DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DwmSetWindowAttribute};
     let Some(hwnd) = hwnd(window) else { return };
     ex_style(hwnd, WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, WS_EX_APPWINDOW);
+    // The compositor's shadow reaches past the window, into a scrolling capture's frames under its HUD.
+    if !shadow {
+        let off = DWMNCRP_DISABLED;
+        let _ = unsafe { DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY, &off as *const _ as *const c_void, size_of_val(&off) as u32) };
+    }
     set_ignores_mouse(window, ignores_mouse);
     set_on_top(window, true);
 }
@@ -635,15 +641,7 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
 
 pub mod window_capture;
 
-pub mod scrolling {
-    use gpui_kit::App;
-
-    pub fn start(_rect: (f32, f32, f32, f32), _display: u32, _up: bool, cx: &mut App) {
-        crate::toast::show(super::NOT_YET, cx);
-    }
-
-    pub fn stop(_cx: &mut App) {}
-}
+pub mod scrolling;
 
 pub mod ocr;
 

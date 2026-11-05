@@ -16,13 +16,10 @@ mod paint;
 mod pin;
 mod pixels;
 mod preview;
-#[cfg(target_os = "macos")]
 mod scrolling;
 mod settings;
 mod settings_window;
 mod single;
-// Only scrolling capture stitches, and Windows has none yet.
-#[cfg_attr(windows, allow(dead_code))]
 mod stitch;
 mod text_edit;
 mod tiled;
@@ -35,7 +32,7 @@ mod win;
 
 // Windows answers to the macOS names, so the shared code calls one set of functions.
 #[cfg(windows)]
-use win::{self as mac, scrolling, window_capture};
+use win::{self as mac, window_capture};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -576,10 +573,6 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
     }
     if !mac::ensure_screen_access() {
         toast::show("Kiri needs Screen Recording permission", cx);
-        return;
-    }
-    if cfg!(windows) && matches!(capture, Capture::Scrolling | Capture::ScrollingUp) {
-        toast::show("Not available on Windows yet", cx);
         return;
     }
     match capture {

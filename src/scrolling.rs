@@ -1,22 +1,14 @@
 //! Scrolling capture: scrolls the area under the selection and stitches frames.
 
-use std::sync::Mutex;
 use std::time::Duration;
 
-use block2::RcBlock;
-use futures::channel::oneshot;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::{ActiveTheme, Sizable, h_flex};
 use gpui_kit::*;
-use objc2_core_foundation::{CFBoolean, CFDictionary, CFString, CFType, CGPoint, CGRect, CGSize};
-use objc2_core_graphics::{
-    CGDataProvider, CGEvent, CGEventTapLocation, CGImage, CGScrollEventUnit,
-    CGWarpMouseCursorPosition,
-};
-use objc2_foundation::NSError;
-use objc2_screen_capture_kit::SCScreenshotManager;
 
 use crate::mac;
+#[cfg(windows)]
+use crate::mac::scrolling as sys;
 use crate::stitch::{Step, Stitcher};
 use crate::tiled::TiledImage;
 
@@ -41,7 +33,7 @@ pub fn start(rect: (f32, f32, f32, f32), display: u32, up: bool, cx: &mut App) {
     let (max_height, reverse, manual) = (s.scroll_max_height, s.scroll_reverse, s.scroll_manual);
     // Each wheel step moves 20% to 60% of the area, so frames always overlap.
     let stride = 0.1 + 0.1 * s.scroll_speed.clamp(1, 5) as f32;
-    if !manual && !accessibility_trusted() {
+    if !manual && !sys::accessibility_trusted() {
         crate::toast::show("Scrolling capture needs Accessibility permission, or turn on Scroll by hand in Settings", cx);
         return;
     }
@@ -49,7 +41,7 @@ pub fn start(rect: (f32, f32, f32, f32), display: u32, up: bool, cx: &mut App) {
     crate::grab_escape(true, cx);
     let hud = open_hud(rect, display, manual, cx);
     cx.spawn(async move |cx| {
-        let result = run(rect, up, reverse, manual, max_height, stride, hud.as_ref().map(|h| &h.1), cx).await;
+        let result = run(rect, display, up, reverse, manual, max_height, stride, hud.as_ref().map(|h| &h.1), cx).await;
         let (result, note) = result.unzip();
         let image = match result {
             Some((w, h, bgra, scale)) => {
@@ -89,6 +81,7 @@ pub fn stop(cx: &mut App) {
 /// Returns the stitched frames as (width, height, BGRA, scale), and why it stopped if the user should know.
 async fn run(
     rect: (f32, f32, f32, f32),
+    display: u32,
     up: bool,
     reverse: bool,
     manual: bool,
@@ -100,12 +93,11 @@ async fn run(
     let executor = cx.background_executor().clone();
     let wait = |ms| executor.timer(Duration::from_millis(ms));
     if !manual {
-        let center = CGPoint::new((rect.0 + rect.2 / 2.) as f64, (rect.1 + rect.3 / 2.) as f64);
-        let _ = CGWarpMouseCursorPosition(center);
+        sys::warp(display, (rect.0 + rect.2 / 2., rect.1 + rect.3 / 2.));
     }
     // Lets the overlay leave the screen before the first frame.
     wait(200).await;
-    let first = grab(rect).await?;
+    let first = sys::grab(display, rect).await?;
     let (w, h, scale) = (first.width, first.height, first.scale);
     let mut stitcher = Stitcher::new(&orient(first.bgra, w, up), w, h, max_height);
     let set_hud = |height: u32, lost: bool, cx: &mut AsyncApp| {
@@ -126,16 +118,16 @@ async fn run(
     while !cx.update(|cx| cx.global::<Session>().stop) {
         let frame = if manual {
             wait(100).await;
-            grab(rect).await
+            sys::grab(display, rect).await
         } else {
             // The wheel goes to whatever is under the cursor, so scroll only while the user leaves it in place.
-            let cursor = CGEvent::location(CGEvent::new(None).as_deref());
+            let cursor = sys::cursor(display);
             if !contains(rect, cursor) {
                 wait(100).await;
                 continue;
             }
-            scroll(cursor, delta);
-            settled(rect, &executor).await
+            sys::scroll(cursor, delta);
+            settled(rect, display, &executor).await
         };
         let Some(frame) = frame else { break };
         if (frame.width, frame.height) != (w, h) {
@@ -186,13 +178,13 @@ async fn run(
 }
 
 /// Grabs until two frames in a row match, so smooth scrolling and inertia have finished.
-async fn settled(rect: (f32, f32, f32, f32), executor: &BackgroundExecutor) -> Option<Frame> {
+async fn settled(rect: (f32, f32, f32, f32), display: u32, executor: &BackgroundExecutor) -> Option<Frame> {
     let wait = |ms| executor.timer(Duration::from_millis(ms));
     wait(60).await;
-    let mut last = grab(rect).await?;
+    let mut last = sys::grab(display, rect).await?;
     for _ in 0..12 {
         wait(40).await;
-        let next = grab(rect).await?;
+        let next = sys::grab(display, rect).await?;
         if next.bgra == last.bgra {
             return Some(next);
         }
@@ -201,17 +193,7 @@ async fn settled(rect: (f32, f32, f32, f32), executor: &BackgroundExecutor) -> O
     Some(last)
 }
 
-fn scroll(at: CGPoint, delta: i32) {
-    let Some(event) = CGEvent::new_scroll_wheel_event2(None, CGScrollEventUnit::Pixel, 1, delta, 0, 0)
-    else {
-        return;
-    };
-    CGEvent::set_location(Some(&event), at);
-    CGEvent::post(CGEventTapLocation::HIDEventTap, Some(&event));
-}
-
-fn contains(rect: (f32, f32, f32, f32), p: CGPoint) -> bool {
-    let (x, y) = (p.x as f32, p.y as f32);
+fn contains(rect: (f32, f32, f32, f32), (x, y): (f32, f32)) -> bool {
     x >= rect.0 && x < rect.0 + rect.2 && y >= rect.1 && y < rect.1 + rect.3
 }
 
@@ -223,62 +205,11 @@ fn orient(bgra: Vec<u8>, width: u32, up: bool) -> Vec<u8> {
     bgra.chunks_exact(width as usize * 4).rev().flatten().copied().collect()
 }
 
-fn accessibility_trusted() -> bool {
-    #[link(name = "ApplicationServices", kind = "framework")]
-    unsafe extern "C" {
-        static kAXTrustedCheckOptionPrompt: &'static CFString;
-        fn AXIsProcessTrustedWithOptions(options: &CFDictionary) -> u8;
-    }
-    let keys: [&CFString; 1] = [unsafe { kAXTrustedCheckOptionPrompt }];
-    let values: [&CFType; 1] = [CFBoolean::new(true).as_ref()];
-    let options = CFDictionary::from_slices(&keys, &values);
-    unsafe { AXIsProcessTrustedWithOptions(options.as_ref()) != 0 }
-}
-
-struct Frame {
-    width: u32,
-    height: u32,
-    scale: f32,
-    bgra: Vec<u8>,
-}
-
-async fn grab(rect: (f32, f32, f32, f32)) -> Option<Frame> {
-    let bounds = CGRect::new(
-        CGPoint::new(rect.0 as f64, rect.1 as f64),
-        CGSize::new(rect.2 as f64, rect.3 as f64),
-    );
-    let (tx, rx) = oneshot::channel();
-    let tx = Mutex::new(Some(tx));
-    let handler = RcBlock::new(move |image: *mut CGImage, _error: *mut NSError| {
-        let frame = unsafe { image.as_ref() }.and_then(|image| to_frame(bounds, image));
-        if let Some(tx) = tx.lock().unwrap().take() {
-            let _ = tx.send(frame);
-        }
-    });
-    unsafe { SCScreenshotManager::captureImageInRect_completionHandler(bounds, Some(&handler)) };
-    rx.await.ok().flatten()
-}
-
-fn to_frame(bounds: CGRect, image: &CGImage) -> Option<Frame> {
-    let width = CGImage::width(Some(image));
-    let height = CGImage::height(Some(image));
-    let stride = CGImage::bytes_per_row(Some(image));
-    if CGImage::bits_per_pixel(Some(image)) != 32 || width == 0 || height == 0 {
-        return None;
-    }
-    let data = CGDataProvider::data(CGImage::data_provider(Some(image)).as_deref())?;
-    let raw = unsafe { data.as_bytes_unchecked() };
-    let row = width * 4;
-    let mut bgra = Vec::with_capacity(row * height);
-    for y in 0..height {
-        bgra.extend_from_slice(&raw[y * stride..y * stride + row]);
-    }
-    Some(Frame {
-        width: width as u32,
-        height: height as u32,
-        scale: (width as f64 / bounds.size.width) as f32,
-        bgra,
-    })
+pub struct Frame {
+    pub width: u32,
+    pub height: u32,
+    pub scale: f32,
+    pub bgra: Vec<u8>,
 }
 
 struct Hud {
@@ -357,4 +288,90 @@ fn open_hud(
         mac::make_floating(window, mac::Level::Status, false, false)
     });
     Some((handle, hud))
+}
+
+#[cfg(target_os = "macos")]
+mod sys {
+    use std::sync::Mutex;
+
+    use block2::RcBlock;
+    use futures::channel::oneshot;
+    use objc2_core_foundation::{CFBoolean, CFDictionary, CFString, CFType, CGPoint, CGRect, CGSize};
+    use objc2_core_graphics::{
+        CGDataProvider, CGEvent, CGEventTapLocation, CGImage, CGScrollEventUnit,
+        CGWarpMouseCursorPosition,
+    };
+    use objc2_foundation::NSError;
+    use objc2_screen_capture_kit::SCScreenshotManager;
+
+    use super::Frame;
+
+    pub fn warp(_display: u32, (x, y): (f32, f32)) {
+        let _ = CGWarpMouseCursorPosition(CGPoint::new(x as f64, y as f64));
+    }
+
+    pub fn cursor(_display: u32) -> (f32, f32) {
+        let at = CGEvent::location(CGEvent::new(None).as_deref());
+        (at.x as f32, at.y as f32)
+    }
+
+    pub fn scroll((x, y): (f32, f32), delta: i32) {
+        let Some(event) = CGEvent::new_scroll_wheel_event2(None, CGScrollEventUnit::Pixel, 1, delta, 0, 0)
+        else {
+            return;
+        };
+        CGEvent::set_location(Some(&event), CGPoint::new(x as f64, y as f64));
+        CGEvent::post(CGEventTapLocation::HIDEventTap, Some(&event));
+    }
+
+    pub fn accessibility_trusted() -> bool {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            static kAXTrustedCheckOptionPrompt: &'static CFString;
+            fn AXIsProcessTrustedWithOptions(options: &CFDictionary) -> u8;
+        }
+        let keys: [&CFString; 1] = [unsafe { kAXTrustedCheckOptionPrompt }];
+        let values: [&CFType; 1] = [CFBoolean::new(true).as_ref()];
+        let options = CFDictionary::from_slices(&keys, &values);
+        unsafe { AXIsProcessTrustedWithOptions(options.as_ref()) != 0 }
+    }
+
+    pub async fn grab(_display: u32, rect: (f32, f32, f32, f32)) -> Option<Frame> {
+        let bounds = CGRect::new(
+            CGPoint::new(rect.0 as f64, rect.1 as f64),
+            CGSize::new(rect.2 as f64, rect.3 as f64),
+        );
+        let (tx, rx) = oneshot::channel();
+        let tx = Mutex::new(Some(tx));
+        let handler = RcBlock::new(move |image: *mut CGImage, _error: *mut NSError| {
+            let frame = unsafe { image.as_ref() }.and_then(|image| to_frame(bounds, image));
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(frame);
+            }
+        });
+        unsafe { SCScreenshotManager::captureImageInRect_completionHandler(bounds, Some(&handler)) };
+        rx.await.ok().flatten()
+    }
+
+    fn to_frame(bounds: CGRect, image: &CGImage) -> Option<Frame> {
+        let width = CGImage::width(Some(image));
+        let height = CGImage::height(Some(image));
+        let stride = CGImage::bytes_per_row(Some(image));
+        if CGImage::bits_per_pixel(Some(image)) != 32 || width == 0 || height == 0 {
+            return None;
+        }
+        let data = CGDataProvider::data(CGImage::data_provider(Some(image)).as_deref())?;
+        let raw = unsafe { data.as_bytes_unchecked() };
+        let row = width * 4;
+        let mut bgra = Vec::with_capacity(row * height);
+        for y in 0..height {
+            bgra.extend_from_slice(&raw[y * stride..y * stride + row]);
+        }
+        Some(Frame {
+            width: width as u32,
+            height: height as u32,
+            scale: (width as f64 / bounds.size.width) as f32,
+            bgra,
+        })
+    }
 }
