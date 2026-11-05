@@ -10,7 +10,7 @@ use gpui_kit::Window;
 use objc2::runtime::ProtocolObject;
 use objc2::AnyThread;
 use objc2_app_kit::{
-    NSApplication, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
+    NSApplication, NSColor, NSCursor, NSEventModifierFlags, NSFloatingWindowLevel, NSImage, NSNormalWindowLevel, NSImageView, NSPaperOrientation, NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL,
     NSPasteboardTypePNG, NSPrintOperation, NSPrintPanelOptions, NSPrintingPaginationMode, NSScreenSaverWindowLevel, NSStatusWindowLevel, NSView,
     NSWindowStyleMask,
 };
@@ -116,6 +116,9 @@ pub fn make_overlay(window: &Window, display: CGDirectDisplayID) {
     ns_window.setStyleMask(NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel);
     ns_window.setLevel(NSScreenSaverWindowLevel);
     ns_window.setHasShadow(false);
+    // The new style mask rebuilds the frame view with an opaque background; the live screen must show through.
+    ns_window.setOpaque(false);
+    ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
     // A transparent window lets clicks through its clear pixels unless told otherwise.
     ns_window.setIgnoresMouseEvents(false);
     ns_window.setFrame_display(frame, true);

@@ -86,6 +86,12 @@ pub fn start(screens: Vec<(u32, Option<Shot>)>, mode: Mode, targets: Vec<WindowI
                     mac::make_overlay(window, display);
                     mac::set_screenshot_cursor(window, mode == Mode::Window);
                 });
+                // The theme fills every root; a live overlay must let the screen show through.
+                if let Some(root) = handle.downcast::<gpui_kit::base::Root>() {
+                    let _ = root.update(cx, |root, _, _| {
+                        root.style().refine(&StyleRefinement::default().bg(transparent_black()));
+                    });
+                }
                 windows.push(handle);
             }
             Err(err) => eprintln!("kiri: overlay window failed: {err:#}"),
