@@ -88,8 +88,38 @@ static ALLOCATOR: alloc::PixelAwareAlloc = alloc::PixelAwareAlloc;
 
 struct KiriAssets;
 
+/// Kiri's own icons, for style variants that have no Lucide icon.
+const VARIANT_ICONS: &[(&str, &[u8])] = &[
+    ("variants/arrow-block.svg", include_bytes!("variants/arrow-block.svg")),
+    ("variants/arrow-bold.svg", include_bytes!("variants/arrow-bold.svg")),
+    ("variants/arrow-double.svg", include_bytes!("variants/arrow-double.svg")),
+    ("variants/arrow-thin.svg", include_bytes!("variants/arrow-thin.svg")),
+    ("variants/counter-bubble.svg", include_bytes!("variants/counter-bubble.svg")),
+    ("variants/counter-circle.svg", include_bytes!("variants/counter-circle.svg")),
+    ("variants/line-dashed.svg", include_bytes!("variants/line-dashed.svg")),
+    ("variants/line-solid.svg", include_bytes!("variants/line-solid.svg")),
+    ("variants/oval-outline.svg", include_bytes!("variants/oval-outline.svg")),
+    ("variants/oval-sketch.svg", include_bytes!("variants/oval-sketch.svg")),
+    ("variants/oval-solid.svg", include_bytes!("variants/oval-solid.svg")),
+    ("variants/oval-tinted.svg", include_bytes!("variants/oval-tinted.svg")),
+    ("variants/pen-free.svg", include_bytes!("variants/pen-free.svg")),
+    ("variants/pen-oval.svg", include_bytes!("variants/pen-oval.svg")),
+    ("variants/pen-rect.svg", include_bytes!("variants/pen-rect.svg")),
+    ("variants/rect-outline.svg", include_bytes!("variants/rect-outline.svg")),
+    ("variants/rect-sketch.svg", include_bytes!("variants/rect-sketch.svg")),
+    ("variants/rect-solid.svg", include_bytes!("variants/rect-solid.svg")),
+    ("variants/rect-tinted.svg", include_bytes!("variants/rect-tinted.svg")),
+    ("variants/round.svg", include_bytes!("variants/round.svg")),
+    ("variants/square.svg", include_bytes!("variants/square.svg")),
+    ("variants/text-label.svg", include_bytes!("variants/text-label.svg")),
+    ("variants/text-plain.svg", include_bytes!("variants/text-plain.svg")),
+];
+
 impl AssetSource for KiriAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if let Some((_, bytes)) = VARIANT_ICONS.iter().find(|(p, _)| *p == path) {
+            return Ok(Some(Cow::Borrowed(*bytes)));
+        }
         match AppIcons.load(path)? {
             Some(bytes) => Ok(Some(bytes)),
             None => gpui_kit::assets::Assets.load(path),

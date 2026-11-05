@@ -2541,6 +2541,23 @@ fn fit_k(bounds: Bounds<Pixels>, area: R, scale: f32) -> f32 {
     (bw / area.w).min(bh / area.h).min(1. / scale).max(0.01)
 }
 
+/// As in the alternative, shapes get icons; modes an icon can't tell apart keep their names.
+fn variant_icon(tool: Tool, i: usize) -> Option<&'static str> {
+    let icons: &[&str] = match tool {
+        Tool::Arrow => &["arrow-block", "arrow-bold", "arrow-thin", "arrow-double"],
+        Tool::Text => &["text-label", "text-plain"],
+        Tool::Rect => &["rect-sketch", "rect-outline", "rect-tinted", "rect-solid"],
+        Tool::Oval => &["oval-sketch", "oval-outline", "oval-tinted", "oval-solid"],
+        Tool::Line => &["line-solid", "line-dashed"],
+        Tool::Pen => &["pen-free", "pen-rect", "pen-oval"],
+        Tool::Spotlight => &["rect-outline", "oval-outline"],
+        Tool::Magnifier => &["round", "square"],
+        Tool::Counter => &["counter-bubble", "counter-circle"],
+        _ => &[],
+    };
+    icons.get(i).copied()
+}
+
 fn centered_origin(bounds: Bounds<Pixels>, area: R, k: f32) -> Point<Pixels> {
     let c = bounds.center();
     let (ax, ay) = area.center();
@@ -2950,10 +2967,11 @@ impl Editor {
             .anchor(Anchor::TopLeft)
             .featured_colors(palette.iter().map(|&c| rgb(c).into()).collect());
         let variants = tool.variants().iter().enumerate().map(|(i, name)| {
-            Button::new(("variant", i))
-                .label(*name)
-                .ghost()
-                .xsmall()
+            let button = Button::new(("variant", i)).ghost();
+            match variant_icon(tool, i) {
+                Some(icon) => button.icon(Icon::empty().path(format!("variants/{icon}.svg"))).small().tooltip(*name),
+                None => button.label(*name).xsmall(),
+            }
                 .selected(style.variant as usize == i)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.apply_style(|s| s.variant = i as u8, cx);
