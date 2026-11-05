@@ -24,10 +24,18 @@
 
 <br>
 
+<p align="center">
+  <img src="docs/assets/editor.png" width="800" alt="The Kiri editor with an arrow, a rectangle, and numbered counters on a screenshot">
+</p>
+
 Kiri captures an area, a window, a screen, or a page that scrolls, and opens it in an editor for arrows, text, blur, and measurements. Press ⇧⌘2, drag, then press Esc, and the image is on the clipboard.
 
 > [!NOTE]
 > Kiri is in beta. Please [open an issue](https://github.com/Moltenship/kiri/issues) when something breaks.
+
+## Kiri and Shottr
+
+Kiri is an open-source alternative to [Shottr](https://shottr.cc/), and most of its ideas come from there. Shottr has years of polish that Kiri doesn't have yet. If you want the most polished screenshot tool for the Mac, you should probably use Shottr instead, and [buy a license](https://shottr.cc/) to support its author.
 
 ## Install
 
