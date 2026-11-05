@@ -611,6 +611,20 @@ fn fullscreen(cx: &mut App) {
     .detach();
 }
 
+/// `gpui_kit::open_window` for a window that draws its own shape. The theme fills every
+/// root, which shows as a rectangle around a rounded toast or the live screen.
+pub fn open_clear_window<V: Render>(
+    options: WindowOptions,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
+    let opened = gpui_kit::open_window(options, cx, build)?;
+    if let Some(root) = opened.0.downcast::<gpui_kit::base::Root>() {
+        let _ = root.update(cx, |root, _, _| root.style().refine(&StyleRefinement::default().bg(transparent_black())));
+    }
+    Ok(opened)
+}
+
 pub fn deliver_shot(shot: mac::Shot, cx: &mut App) {
     let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra, (shot.width * 4) as usize);
     let (scale, display) = (shot.scale, (shot.display != 0).then_some(shot.display));

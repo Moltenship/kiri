@@ -80,7 +80,7 @@ pub fn open(image: TiledImage, scale: f32, display: Option<u32>, saved: Option<P
     } else {
         image.tiles().next().map(|(_, t)| t.clone()).expect("an image has a tile")
     };
-    let opened = gpui_kit::open_window(options, cx, |window, cx| {
+    let opened = crate::open_clear_window(options, cx, |window, cx| {
         let view = cx.new(|cx| Preview {
             thumb,
             image,

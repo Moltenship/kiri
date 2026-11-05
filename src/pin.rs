@@ -56,7 +56,7 @@ pub fn open(image: TiledImage, scale: f32, origin: Point<Pixels>, doc: Option<cr
         window_background: WindowBackgroundAppearance::Transparent,
         ..Default::default()
     };
-    let opened = gpui_kit::open_window(options, cx, |window, cx| {
+    let opened = crate::open_clear_window(options, cx, |window, cx| {
         let pin = cx.new(|cx| Pin {
             id,
             image,

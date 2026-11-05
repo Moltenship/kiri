@@ -349,7 +349,7 @@ fn open_hud(
         window_background: WindowBackgroundAppearance::Transparent,
         ..Default::default()
     };
-    let (handle, hud) = gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Hud { height: 0, manual, lost: false })).ok()?;
+    let (handle, hud) = crate::open_clear_window(options, cx, |_, cx| cx.new(|_| Hud { height: 0, manual, lost: false })).ok()?;
     let _ = handle.update(cx, |_, window, _| {
         mac::make_floating(window, mac::Level::Status, false, false)
     });

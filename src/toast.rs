@@ -97,7 +97,7 @@ fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) 
         window_background: WindowBackgroundAppearance::Transparent,
         ..Default::default()
     };
-    let opened = gpui_kit::open_window(options, cx, |_, cx| {
+    let opened = crate::open_clear_window(options, cx, |_, cx| {
         cx.new(|_| Toast { text, action, style })
     });
     let Ok((handle, _)) = opened else { return };
