@@ -615,35 +615,7 @@ pub fn accept_pipe(name: &Path) -> Option<std::fs::File> {
     }
 }
 
-/// Window capture needs Windows.Graphics.Capture; until then there are no windows to pick.
-pub mod window_capture {
-    use super::Shot;
-    use crate::settings::WindowBackground;
-
-    #[derive(Clone, Debug)]
-    pub struct WindowInfo {
-        pub id: u32,
-        pub app: String,
-        pub title: String,
-        pub frame: (f32, f32, f32, f32),
-    }
-
-    pub async fn list_windows() -> Vec<WindowInfo> {
-        Vec::new()
-    }
-
-    pub async fn frontmost_window() -> Option<WindowInfo> {
-        None
-    }
-
-    pub async fn capture(_id: u32, _background: WindowBackground, _color: u32) -> Option<Shot> {
-        None
-    }
-
-    pub async fn desktop_picture() -> Option<Shot> {
-        None
-    }
-}
+pub mod window_capture;
 
 pub mod scrolling {
     use gpui_kit::App;

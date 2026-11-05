@@ -581,7 +581,7 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
         toast::show("Kiri needs Screen Recording permission", cx);
         return;
     }
-    if cfg!(windows) && matches!(capture, Capture::Window | Capture::ActiveWindow | Capture::Scrolling | Capture::ScrollingUp | Capture::Text) {
+    if cfg!(windows) && matches!(capture, Capture::Scrolling | Capture::ScrollingUp | Capture::Text) {
         toast::show("Not available on Windows yet", cx);
         return;
     }
