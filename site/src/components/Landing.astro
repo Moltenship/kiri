@@ -1,0 +1,140 @@
+---
+import '../styles/site.css'
+import Playground from '../demos/Playground'
+import FeatureDemo from '../features/FeatureDemo'
+import { FEATURES } from '../features/copy'
+
+const GITHUB = 'https://github.com/Moltenship/kiri'
+const RELEASES = `${GITHUB}/releases`
+const F = FEATURES
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/icon.png" />
+    <title>Kiri, the open-source screenshot tool</title>
+    <meta name="description" content="Capture, mark up and paste in seconds. Free and open source. macOS now, Windows and Linux soon." />
+    <script is:inline>
+      try { const t = localStorage.getItem('kiri-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/"><img src="/icon.png" width="28" height="28" alt="" />Kiri</a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href={GITHUB}>GitHub</a>
+      </nav>
+      <a class="btn btn--small" href={RELEASES}>Download</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <a class="eyebrow" href={RELEASES}>0.1.0 beta <span>·</span> free and open source</a>
+        <h1>Screenshot, mark it&nbsp;up, paste.</h1>
+        <p class="lede">
+          Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd>, drag, mark it up, then <kbd>Esc</kbd>. The image is on your clipboard.
+          Click the editor below to take over.
+        </p>
+        <div class="ctas">
+          <a class="btn" href={RELEASES}>Download for macOS</a>
+          <a class="btn btn--ghost" href={GITHUB}>Star on GitHub</a>
+        </div>
+        <p class="platforms-line">
+          macOS 15.2+ on Apple Silicon
+          <span class="soon">Windows · coming soon</span>
+          <span class="soon">Linux · coming soon</span>
+        </p>
+      </section>
+
+      <section class="demo">
+        <Playground client:only="react" autoplay />
+      </section>
+
+      <section class="section" id="features">
+        <h2>Everything a screenshot needs</h2>
+        <div class="bento">
+          <article class="tile span-4">
+            <p class="tile-copy"><b>{F.scroll.title}.</b> {F.scroll.body}</p>
+            <div class="tile-pic" data-ss-fill><FeatureDemo name="scroll" client:only="react" /></div>
+          </article>
+          {[[F.measure, 'span-2'], [F.redact, 'span-3'], [F.text, 'span-3'], [F.pin, 'span-3'], [F.backdrop, 'span-3']].map(([f, span]) => (
+            <article class={`tile ${span}`}>
+              <p class="tile-copy"><b>{f.title}.</b> {f.body}</p>
+              <div class="tile-pic" data-ss-fill><FeatureDemo name={f.demo} client:only="react" /></div>
+            </article>
+          ))}
+          <article class="tile span-3">
+            <p class="tile-copy"><b>Nothing leaves your Mac.</b> No account, no cloud, no telemetry. The one request Kiri makes is the daily update check.</p>
+            <div class="net" aria-hidden="true">
+              <div class="net-head"><img src="/icon.png" width="20" height="20" alt="" /><b>Kiri</b><span>Outgoing connections today</span></div>
+              <div class="net-row">
+                <span class="net-dot"></span>
+                <span class="net-host"><b>api.github.com</b><code>/repos/Moltenship/kiri/releases</code></span>
+                <span class="net-why">Update check</span>
+              </div>
+              <div class="net-empty">No other connections</div>
+            </div>
+          </article>
+          <article class="tile span-3">
+            <p class="tile-copy"><b>Open at the core.</b> MIT licensed and written in Rust. Every feature is free, including the ones other tools sell. <a href={GITHUB}>Read the source</a></p>
+            <div class="license" aria-hidden="true">
+              <div class="license-page">
+                <span class="license-file">LICENSE</span>
+                <p class="license-title">MIT License</p>
+                <p>Copyright (c) 2026 Timofey Maximov and Kiri contributors</p>
+                <p class="license-body">Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute…</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section get" id="platforms">
+        <img class="get-icon" src="/icon.png" width="96" height="96" alt="" />
+        <h2>Get Kiri</h2>
+        <p class="get-lede">Free and open source. No account to make.</p>
+        <div class="ctas">
+          <a class="btn" href={RELEASES}>Download for macOS</a>
+          <a class="btn btn--ghost" href={GITHUB}>Star on GitHub</a>
+        </div>
+        <ul class="os">
+          <li data-ready><span class="os-dot"></span><b>macOS</b><span>15.2+ on Apple Silicon</span></li>
+          <li><span class="os-dot"></span><b>Windows</b><span>Coming soon</span></li>
+          <li><span class="os-dot"></span><b>Linux</b><span>Coming soon</span></li>
+        </ul>
+        <p class="watch"><a href={RELEASES}>Watch releases on GitHub</a> to hear when Windows and Linux land.</p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span class="foot-brand"><img src="/icon.png" width="20" height="20" alt="" /> Kiri</span>
+      <span class="foot-links">
+        <span>MIT · <a href={GITHUB}>GitHub</a> · <a href={`${GITHUB}/blob/main/CHANGELOG.md`}>Changelog</a></span>
+        <span class="theme" role="group" aria-label="Theme">
+          <button type="button" data-set="auto">Auto</button>
+          <button type="button" data-set="light">Light</button>
+          <button type="button" data-set="dark">Dark</button>
+        </span>
+      </span>
+    </footer>
+    <script>
+      const root = document.documentElement
+      const buttons = document.querySelectorAll<HTMLButtonElement>('.theme button')
+      const show = () => buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.set === (root.dataset.theme ?? 'auto'))))
+      buttons.forEach((b) =>
+        b.addEventListener('click', () => {
+          const t = b.dataset.set!
+          if (t === 'auto') delete root.dataset.theme
+          else root.dataset.theme = t
+          try { t === 'auto' ? localStorage.removeItem('kiri-theme') : localStorage.setItem('kiri-theme', t) } catch {}
+          show()
+        }),
+      )
+      show()
+    </script>
+  </body>
+</html>
