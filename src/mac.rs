@@ -354,6 +354,10 @@ fn numbered_cursor(window_pick: bool, numbers: Option<[i32; 2]>) -> Option<objc2
             let size = CGSize::new(image.size().width.max(hot.x + 52.), image.size().height.max(hot.y + 34.));
             let draw = RcBlock::new(move |_: CGRect| -> objc2::runtime::Bool {
                 image.drawInRect(CGRect::new(CGPoint::ZERO, image.size()));
+                // Mitered joins would leave white spikes on the sharp corners of 2, 4 and 7.
+                if let Some(context) = objc2_app_kit::NSGraphicsContext::currentContext() {
+                    CGContext::set_line_join(Some(&context.CGContext()), objc2_core_graphics::CGLineJoin::Round);
+                }
                 for (i, line) in lines.iter().enumerate() {
                     let at = CGPoint::new(hot.x + 10., hot.y + 3. + 13. * i as f64);
                     unsafe {
