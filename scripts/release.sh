@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Kiri.app, signs and notarizes it as Kiri.dmg and Kiri.zip, and with --publish uploads both as a GitHub release.
+# Builds Kiri.app, signs and notarizes it in Kiri.dmg, and with --publish uploads that as a GitHub release.
 # Needs a Developer ID identity in the keychain and an App Store Connect API key in
 # ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH. See docs/operations/release.md.
 set -eu
@@ -28,12 +28,12 @@ cp macos/Kiri.icns "$APP/Contents/Resources/Kiri.icns"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@BUILD@/${VERSION%%-*}/" macos/Info.plist > "$APP/Contents/Info.plist"
 
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+# notarytool takes an archive, not a bundle; the zip only carries the app there.
 ditto -c -k --keepParent "$APP" "$ZIP"
 xcrun notarytool submit "$ZIP" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
+# The stapled ticket lets Gatekeeper pass offline, so the app is stapled before it goes in the DMG.
 xcrun stapler staple "$APP"
-# The stapled ticket lets Gatekeeper pass offline, so the zip is rebuilt with it.
 rm "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
 spctl --assess --type execute "$APP"
 
 if [ ! -x "$DMGBUILD" ]; then
@@ -45,8 +45,8 @@ codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
 xcrun stapler staple "$DMG"
 spctl --assess --type open --context context:primary-signature "$DMG"
-echo "Built $DMG and $ZIP ($VERSION)"
+echo "Built $DMG ($VERSION)"
 
 [ "${1:-}" = "--publish" ] || exit 0
 case $VERSION in *-*) PRE=--prerelease ;; *) PRE= ;; esac
-printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$DMG" "$ZIP" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - $PRE
+printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$DMG" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - $PRE

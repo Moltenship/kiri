@@ -1,6 +1,6 @@
 # Releasing Kiri for macOS
 
-`scripts/release.sh` builds `dist/Kiri.app`, signs it with the Developer ID, notarizes and staples it, and packs it twice: `dist/Kiri.dmg` for people to install, and `dist/Kiri.zip` for the updater. With `--publish` it also creates the GitHub release `v<version>` at HEAD with both files, and that version's CHANGELOG section as the notes. Versions with a suffix such as `-beta.2` are marked as pre-releases.
+`scripts/release.sh` builds `dist/Kiri.app`, signs it with the Developer ID, notarizes and staples it, and packs it in `dist/Kiri.dmg`, which is notarized too. With `--publish` it also creates the GitHub release `v<version>` at HEAD with the DMG, and that version's CHANGELOG section as the notes. Versions with a suffix such as `-beta.2` are marked as pre-releases.
 
 ## Once per machine
 
@@ -21,4 +21,4 @@ Running Kiris see the release within a day, or right away from Check for Updates
 ## Things that break updates
 
 - **The bundle identifier or the signing team.** The updater only accepts a download whose signature satisfies `REQUIREMENT` in [`src/update.rs`](../../src/update.rs), so `sh.kiri.Kiri` and team `Q9SDRFKBC6` must change there first, and the change has to ship before builds signed the new way. macOS also keys the Screen Recording and Accessibility permissions to the same signature, so users grant them again after such a change.
-- **The asset name.** The updater downloads `Kiri.zip`, never the DMG, so it must stay `Kiri.zip`, with `Kiri.app` at the top level of the archive.
+- **The asset name.** The updater downloads `Kiri.dmg`, so it must keep that name, with `Kiri.app` at the top level of the volume. Builds up to 0.1.0-beta.5 look for `Kiri.zip` instead and don't see later releases.

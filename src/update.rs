@@ -8,7 +8,7 @@ use std::time::Duration;
 use gpui_kit::{App, Global};
 
 const RELEASES: &str = "https://api.github.com/repos/Moltenship/kiri/releases?per_page=10";
-const ASSET: &str = "Kiri.zip";
+const ASSET: &str = "Kiri.dmg";
 /// Only a build signed by Kiri's own Developer ID may replace the running app.
 const REQUIREMENT: &str =
     r#"=anchor apple generic and identifier "sh.kiri.Kiri" and certificate leaf[subject.OU] = "Q9SDRFKBC6""#;
@@ -137,15 +137,19 @@ fn latest() -> Result<Option<(String, String)>, String> {
         .max_by(|a, b| if newer(&a.0, &b.0) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }))
 }
 
-/// Downloads and unpacks `url`, and checks that Kiri's Developer ID signed it.
+/// Downloads the DMG at `url`, copies Kiri out of it, and checks that Kiri's Developer ID signed it.
 fn download(url: &str) -> Result<PathBuf, String> {
     let dir = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Caches/Kiri/Update");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let zip = dir.join(ASSET);
-    run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "600", "-o"]).arg(&zip).arg(url))?;
-    run(Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(&zip).arg(&dir))?;
+    let dmg = dir.join(ASSET);
+    run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "600", "-o"]).arg(&dmg).arg(url))?;
+    let volume = dir.join("volume");
+    run(Command::new("/usr/bin/hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"]).arg(&volume).arg(&dmg))?;
     let staged = dir.join("Kiri.app");
+    let copied = run(Command::new("/usr/bin/ditto").arg(volume.join("Kiri.app")).arg(&staged));
+    let _ = run(Command::new("/usr/bin/hdiutil").args(["detach", "-force"]).arg(&volume));
+    copied?;
     run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict", "-R", REQUIREMENT]).arg(&staged))
         .map_err(|_| "the download isn't signed by Kiri".to_string())?;
     Ok(staged)
