@@ -326,6 +326,7 @@ fn load_cursor(name: &str, hot_x: f64, hot_y: f64) -> Option<objc2::rc::Retained
 /// Shows the system screenshot cursor over an overlay window. Kiri isn't the active app
 /// while selecting, so only a cursor rect sticks, and AppKit only applies the rects a view
 /// gives from `resetCursorRects`. The overlay's view gets a subclass whose rect is ours.
+/// The rect covers the screen, so the pointer never enters it: each paint sets the cursor too.
 pub fn set_screenshot_cursor(window: &Window, window_pick: bool) -> bool {
     use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
     use std::cell::Cell;
@@ -362,6 +363,9 @@ pub fn set_screenshot_cursor(window: &Window, window_pick: bool) -> bool {
         if let Some(ns_window) = view.window() {
             ns_window.invalidateCursorRectsForView(view);
         }
+    }
+    if let Some(cursor) = screenshot_cursor(window_pick) {
+        cursor.set();
     }
     true
 }

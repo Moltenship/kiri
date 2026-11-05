@@ -91,7 +91,7 @@ pub fn start(screens: Vec<(u32, Option<Shot>)>, mode: Mode, targets: Vec<WindowI
             Err(err) => eprintln!("kiri: overlay window failed: {err:#}"),
         }
     }
-    cx.activate(true);
+    // The overlay is a non-activating panel; activating Kiri would repaint the front app as inactive.
     if !windows.is_empty() {
         crate::grab_escape(true, cx);
     }
