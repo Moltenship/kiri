@@ -5,7 +5,7 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 ## [0.1.0-beta.3] - 2026-11-05
 
 ### Changed
-- Kiri no longer downloads updates on its own. A red dot on the menu bar icon says a new version is out, and Update to Kiri <version>… in its menu installs it.
+- Kiri no longer downloads updates on its own. A red dot on the menu bar icon says a new version is out, and the Update to Kiri item in its menu installs it.
 
 ### Added
 - Settings → Hotkeys marks a shortcut that macOS also uses, names the macOS shortcut and its Keyboard Shortcuts section, and opens Keyboard Shortcuts.

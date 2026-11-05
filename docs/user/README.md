@@ -52,4 +52,4 @@ Kiri can record your screen, so it won't take a capture for another app until yo
 
 ## Updates
 
-Kiri checks GitHub for a new version once a day. When one is out, a red dot appears on the menu bar icon. Choose Update to Kiri <version>… in its menu to download it and restart into it. Check for Updates… checks right away, and Settings → General turns the daily check off.
+Kiri checks GitHub for a new version once a day. When one is out, a red dot appears on the menu bar icon. Choose Update to Kiri in its menu to download it and restart into it. Check for Updates… checks right away, and Settings → General turns the daily check off.
