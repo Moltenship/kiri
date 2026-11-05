@@ -138,7 +138,7 @@ impl Preview {
         let path = self
             .saved
             .clone()
-            .unwrap_or_else(|| mac::timestamp_path(&settings::get(cx).save_dir()));
+            .unwrap_or_else(|| settings::get(cx).save_path());
         match export::save_capture(&self.image, self.scale, self.png(), path, settings::get(cx).save_auto_jpeg) {
             Ok(path) => crate::toast::saved(path, cx),
             Err(err) => crate::toast::show(format!("Couldn't save: {err}"), cx),
@@ -219,7 +219,7 @@ impl Render for Preview {
                     .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
                     .external_drag_payload(|drag: &DragOut, _, cx| {
                         let png = drag.0.upgrade()?.read(cx).png();
-                        let path = crate::editor::write_temp(&png)?;
+                        let path = crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)?;
                         Some(ExternalDragPayload::Files(FileDragPaths::new([(path, false)])))
                     })
                     .child(

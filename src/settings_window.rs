@@ -62,12 +62,15 @@ pub struct SettingsWindow {
     page: usize,
     search: Entity<InputState>,
     solid: Entity<ColorPickerState>,
-    _subscriptions: [Subscription; 4],
+    file_name: Entity<InputState>,
+    _subscriptions: [Subscription; 5],
 }
 
 impl SettingsWindow {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings…"));
+        let template = settings::get(cx).file_name.clone();
+        let file_name = cx.new(|cx| InputState::new(window, cx).default_value(template).placeholder(settings::FILE_NAME));
         let color = settings::get(cx).window_background_color;
         let solid = cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(color)));
         let subscriptions = [
@@ -77,6 +80,12 @@ impl SettingsWindow {
             }),
             cx.observe_global::<settings::Current>(|_, cx| cx.notify()),
             cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()),
+            cx.subscribe(&file_name, |_, input, e: &InputEvent, cx| {
+                if let InputEvent::Change = e {
+                    let value = input.read(cx).value().to_string();
+                    settings::update(cx, |s| s.file_name = value);
+                }
+            }),
             cx.subscribe(&solid, |_, _, e: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(c)) = e {
                     let c = c.to_rgb();
@@ -85,7 +94,7 @@ impl SettingsWindow {
                 }
             }),
         ];
-        Self { focus: cx.focus_handle(), page: 0, search, solid, _subscriptions: subscriptions }
+        Self { focus: cx.focus_handle(), page: 0, search, solid, file_name, _subscriptions: subscriptions }
     }
 }
 
@@ -215,7 +224,7 @@ const CMD_Q: &[(settings::CmdQ, &str)] = &[
     (settings::CmdQ::CloseWindow, "Closes the window"),
 ];
 
-fn general(cx: &App) -> Page {
+fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
     let now = settings::get(cx);
     let dir = now.save_dir();
     let dir = match std::env::var_os("HOME").and_then(|home| dir.strip_prefix(home).ok().map(|p| p.to_path_buf())) {
@@ -264,6 +273,10 @@ fn general(cx: &App) -> Page {
                 "Saving",
                 [
                     row("Save folder", folder).description(dir),
+                    row("File name", Input::new(file_name).small().w(px(240.))).description(format!(
+                        "Saves as “{}.png”. %Y, %m, %d, %H, %M, and %S fill in the time.",
+                        crate::mac::file_stem(&now.file_name)
+                    )),
                     row("Save format", choice("format", SAVE_FORMATS, |s| s.save_auto_jpeg, |s, v| s.save_auto_jpeg = v, cx))
                         .description("Auto saves a JPEG when it is smaller, which suits photos. Transparent images stay PNG."),
                     row("Downscale Retina screenshots", toggle("downscale", |s| s.downscale_retina, |s, v| s.downscale_retina = v, cx))
@@ -600,7 +613,7 @@ fn advanced(cx: &App) -> Page {
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let pages = [general(cx), capture(&self.solid, cx), editor(cx), hotkeys(window, cx), advanced(cx)];
+        let pages = [general(&self.file_name, cx), capture(&self.solid, cx), editor(cx), hotkeys(window, cx), advanced(cx)];
         let query = self.search.read(cx).value().trim().to_lowercase();
         let theme = cx.theme().clone();
 

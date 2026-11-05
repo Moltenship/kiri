@@ -315,7 +315,7 @@ impl Render for Pin {
                                 .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
                                 .external_drag_payload(|drag: &DragOut, _, cx| {
                                     let png = drag.0.upgrade()?.read(cx).png();
-                                    let path = crate::editor::write_temp(&png)?;
+                                    let path = crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)?;
                                     Some(ExternalDragPayload::Files(FileDragPaths::new([(path, false)])))
                                 }),
                         )

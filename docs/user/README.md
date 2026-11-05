@@ -17,7 +17,7 @@ To use ⇧⌘3 and ⇧⌘4 for Kiri, Settings → Hotkeys shows how to free them
 
 A capture opens the editor or a small thumbnail (Settings → General). It can also be copied or saved at once. Drag the thumbnail into another app to drop the file there.
 
-In the editor, `Esc` copies and closes, `⌘C` does the same, and `⇧⌘C` copies and keeps the editor open. `⌘S` saves to the save folder, the Desktop until you choose one in Settings → General.
+In the editor, `Esc` copies and closes, `⌘C` does the same, and `⇧⌘C` copies and keeps the editor open. `⌘S` saves to the save folder, the Desktop until you choose one in Settings → General. File name there sets how files are named: `%Y`, `%m`, `%d`, `%H`, `%M`, and `%S` fill in the date and time.
 
 ## Editing
 

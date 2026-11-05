@@ -1095,7 +1095,7 @@ impl Editor {
         self.finish_text();
         let under: Vec<Object> = self.objects.iter().filter(|o| o.id != id).cloned().collect();
         let frames = [self.export_pixmap(&self.objects, cx).0, self.export_pixmap(&under, cx).0];
-        let path = mac::timestamp_path(&settings::get(cx).save_dir()).with_extension("gif");
+        let path = settings::get(cx).save_path().with_extension("gif");
         let write = cx.background_spawn({
             let path = path.clone();
             async move {
@@ -1127,7 +1127,7 @@ impl Editor {
         self.finish_text();
         let pixmap = Arc::new(self.export_pixmap(&self.objects, cx));
         if save {
-            let path = self.saved_to.clone().unwrap_or_else(|| mac::timestamp_path(&settings::get(cx).save_dir()));
+            let path = self.saved_to.clone().unwrap_or_else(|| settings::get(cx).save_path());
             let write = write_later(pixmap.clone(), path, cx);
             cx.spawn(async move |_, cx| {
                 let result = write.await;
@@ -1171,7 +1171,7 @@ impl Editor {
         self.finish_text();
         let path = match &self.saved_to {
             Some(p) => p.clone(),
-            None => mac::timestamp_path(&settings::get(cx).save_dir()),
+            None => settings::get(cx).save_path(),
         };
         self.write_file(path, cx);
     }
@@ -1183,7 +1183,7 @@ impl Editor {
             None => (settings::get(cx).save_dir(), None),
         };
         let name = name.unwrap_or_else(|| {
-            let path = mac::timestamp_path(&dir);
+            let path = mac::timestamp_path(&dir, &settings::get(cx).file_name);
             path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
         });
         let rx = cx.prompt_for_new_path(&dir, Some(&name));
@@ -1221,7 +1221,7 @@ impl Editor {
 
 
     fn export_temp(&self, cx: &App) -> Option<PathBuf> {
-        write_temp(&self.png(cx))
+        write_temp(&self.png(cx), &settings::get(cx).file_name)
     }
 
     fn pin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2429,9 +2429,10 @@ fn write_later(pixmap: Arc<(tiny_skia::Pixmap, f32)>, path: PathBuf, cx: &App) -
 /// Puts a PNG on the clipboard once `encode` finishes in the background, so the window
 /// that asked can close at once.
 pub fn copy_later(encode: impl FnOnce() -> Vec<u8> + Send + 'static, cx: &App) {
+    let name = settings::get(cx).file_name.clone();
     let png = cx.background_spawn(async move {
         let png = encode();
-        let file = write_temp(&png);
+        let file = write_temp(&png, &name);
         (png, file)
     });
     cx.spawn(async move |_| {
@@ -2441,10 +2442,10 @@ pub fn copy_later(encode: impl FnOnce() -> Vec<u8> + Send + 'static, cx: &App) {
     .detach();
 }
 
-pub fn write_temp(png: &[u8]) -> Option<PathBuf> {
+pub fn write_temp(png: &[u8], name: &str) -> Option<PathBuf> {
     let dir = std::env::temp_dir().join("Kiri");
     std::fs::create_dir_all(&dir).ok()?;
-    let path = mac::timestamp_path(&dir);
+    let path = mac::timestamp_path(&dir, name);
     std::fs::write(&path, png).ok()?;
     Some(path)
 }

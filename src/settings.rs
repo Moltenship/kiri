@@ -176,10 +176,14 @@ fn oklch(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     (ok_l, a.hypot(bb), h)
 }
 
+pub const FILE_NAME: &str = "Kiri %Y-%m-%d at %H.%M.%S";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub save_folder: Option<PathBuf>,
+    /// strftime fields, such as `%Y` and `%H`, fill in the time of the capture.
+    pub file_name: String,
     pub after_show: bool,
     pub after_copy: bool,
     pub after_save: bool,
@@ -222,6 +226,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             save_folder: None,
+            file_name: FILE_NAME.into(),
             after_show: true,
             after_copy: false,
             after_save: false,
@@ -256,6 +261,10 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn save_path(&self) -> PathBuf {
+        crate::mac::timestamp_path(&self.save_dir(), &self.file_name)
+    }
+
     pub fn save_dir(&self) -> PathBuf {
         self.save_folder
             .clone()
@@ -385,6 +394,14 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::Capture;
+
+    #[test]
+    fn file_names_fill_in_the_time_and_stay_valid() {
+        let year = crate::mac::file_stem("%Y");
+        assert!(year.len() == 4 && year.starts_with("20"), "{year}");
+        assert_eq!(crate::mac::file_stem("a/b:c"), "a-b-c");
+        assert!(crate::mac::file_stem("  ").starts_with("Kiri "));
+    }
 
     #[test]
     fn cli_names_are_kebab_case_and_round_trip() {

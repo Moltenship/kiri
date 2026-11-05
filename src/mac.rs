@@ -401,20 +401,9 @@ pub fn mark_screenshot(path: &std::path::Path) {
 /// `Kiri 2026-11-04 at 14.05.09.png` in `dir`, the same shape macOS uses for screenshots.
 /// A second capture in the same second gets ` 2`, so neither overwrites the other. Names
 /// handed out are remembered, since a background save writes the file only later.
-pub fn timestamp_path(dir: &std::path::Path) -> PathBuf {
+pub fn timestamp_path(dir: &std::path::Path, template: &str) -> PathBuf {
     static TAKEN: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
-    let now = unsafe { libc::time(std::ptr::null_mut()) };
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe { libc::localtime_r(&now, &mut tm) };
-    let stem = format!(
-        "Kiri {:04}-{:02}-{:02} at {:02}.{:02}.{:02}",
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min,
-        tm.tm_sec
-    );
+    let stem = file_stem(template);
     let mut taken = TAKEN.lock().unwrap_or_else(|e| e.into_inner());
     let path = (1..)
         .map(|n| dir.join(if n == 1 { format!("{stem}.png") } else { format!("{stem} {n}.png") }))
@@ -422,6 +411,20 @@ pub fn timestamp_path(dir: &std::path::Path) -> PathBuf {
         .expect("an unused name");
     taken.push(path.clone());
     path
+}
+
+/// `template` with strftime fields filled in, made safe for a file name.
+pub fn file_stem(template: &str) -> String {
+    let (now, mut tm) = (unsafe { libc::time(std::ptr::null_mut()) }, unsafe { std::mem::zeroed() });
+    unsafe { libc::localtime_r(&now, &mut tm) };
+    let mut buf = [0u8; 512];
+    let format = std::ffi::CString::new(template.replace('\0', "")).unwrap_or_default();
+    let n = unsafe { libc::strftime(buf.as_mut_ptr().cast(), buf.len(), format.as_ptr(), &tm) };
+    let stem = String::from_utf8_lossy(&buf[..n]).replace(['/', ':'], "-");
+    match stem.trim() {
+        "" if template != crate::settings::FILE_NAME => file_stem(crate::settings::FILE_NAME),
+        stem => stem.to_string(),
+    }
 }
 
 fn ct_line(text: &str, size: f32, bold: bool) -> Option<CFRetained<CTLine>> {

@@ -629,15 +629,15 @@ pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App
         }
         return;
     }
-    let save_to = then.save.then(|| mac::timestamp_path(&s.save_dir()));
-    let (auto, copy, edit) = (s.save_auto_jpeg, then.copy, then.edit);
+    let save_to = then.save.then(|| s.save_path());
+    let (auto, copy, edit, name) = (s.save_auto_jpeg, then.copy, then.edit, s.file_name.clone());
     cx.spawn(async move |cx| {
         let shot = image.clone();
         let (png, temp, saved) = cx
             .background_executor()
             .spawn(async move {
                 let png = export::encode_bgra(shot.width, shot.height, shot.read(shot.full()), scale);
-                let temp = copy.then(|| editor::write_temp(&png)).flatten();
+                let temp = copy.then(|| editor::write_temp(&png, &name)).flatten();
                 let saved = save_to.and_then(|path| export::save_capture(&shot, scale, png.clone(), path, auto).ok());
                 (png, temp, saved)
             })
