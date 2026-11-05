@@ -2,6 +2,12 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.6] - 2026-11-05
+
+### Changed
+- Kiri comes as a DMG: open it and drag Kiri to Applications.
+- Updates download the DMG. Kiri 0.1.0-beta.5 and earlier don't see this release, so install it from the DMG once.
+
 ## [0.1.0-beta.5] - 2026-11-05
 
 ### Fixed
