@@ -108,6 +108,14 @@ pub enum Preview {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum AreaSelection {
+    /// `screencapture -i`, as the alternative uses.
+    System,
+    /// Kiri's overlay, with options of its own.
+    Kiri,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum WindowBackground {
     Wallpaper,
     Transparent,
@@ -219,7 +227,8 @@ pub struct Settings {
     pub scroll_reverse: bool,
     /// The user scrolls; Kiri only watches and stitches.
     pub scroll_manual: bool,
-    /// The overlay shows a still of the moment the hotkey was pressed, instead of the live screen.
+    pub area_selection: AreaSelection,
+    /// Kiri's overlay shows a still of the moment the hotkey was pressed, instead of the live screen.
     pub freeze_screen: bool,
     /// Capture Screen takes every display as arranged, instead of the one under the pointer.
     pub fullscreen_all_displays: bool,
@@ -263,6 +272,7 @@ impl Default for Settings {
             automation: false,
             auto_update: true,
             appearance: Appearance::System,
+            area_selection: AreaSelection::System,
             freeze_screen: false,
             fullscreen_all_displays: false,
             hotkeys: BTreeMap::new(),
@@ -305,7 +315,14 @@ pub fn path() -> PathBuf {
 pub fn load(cx: &mut App) {
     let settings = std::fs::read_to_string(path())
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| {
+            let mut settings: Settings = serde_json::from_str(&s).ok()?;
+            // Before the choice existed, freezing was the reason to want Kiri's selection.
+            if settings.freeze_screen && !s.contains("\"area_selection\"") {
+                settings.area_selection = AreaSelection::Kiri;
+            }
+            Some(settings)
+        })
         .unwrap_or_default();
     cx.set_global(Current(settings));
     cx.on_app_quit(|cx| {

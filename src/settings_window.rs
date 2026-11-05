@@ -13,7 +13,7 @@ use gpui_kit::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::settings::{self, Capture, ColorFormat, Preview, WindowBackground};
+use crate::settings::{self, AreaSelection, Capture, ColorFormat, Preview, WindowBackground};
 
 actions!(settings_window, [CloseSettings]);
 
@@ -260,6 +260,7 @@ fn button(id: &'static str, label: &'static str, on_click: impl Fn(&mut App) + '
 const SAVE_FORMATS: &[(bool, &str)] = &[(false, "PNG"), (true, "Auto (PNG or JPEG)")];
 const PREVIEWS: &[(Preview, &str)] = &[(Preview::Editor, "Editor"), (Preview::Thumbnail, "Thumbnail")];
 const HIDE_AFTER: &[(u32, &str)] = &[(0, "Manually"), (3, "After 3 seconds"), (5, "After 5 seconds"), (10, "After 10 seconds")];
+const SELECTIONS: &[(AreaSelection, &str)] = &[(AreaSelection::System, "macOS"), (AreaSelection::Kiri, "Kiri")];
 const BACKGROUNDS: &[(WindowBackground, &str)] = &[
     (WindowBackground::Transparent, "Transparent"),
     (WindowBackground::Wallpaper, "Wallpaper"),
@@ -351,8 +352,14 @@ fn capture(solid: &Entity<ColorPickerState>, cx: &App) -> Page {
         groups: vec![
             group(
                 "Area",
-                [row("Freeze the screen while selecting", toggle("freeze", |s| s.freeze_screen, |s, v| s.freeze_screen = v, cx))
-                    .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")],
+                [
+                    row("Selection", choice("selection", SELECTIONS, |s| s.area_selection, |s, v| s.area_selection = v, cx)).description(
+                        "macOS selects the same way as ⇧⌘4. Kiri adds arrow keys that move the pointer one point at a time, remembers the area for Repeat Area Capture, and has the options below.",
+                    ),
+                    row("Freeze the screen while selecting", toggle("freeze", |s| s.freeze_screen, |s, v| s.freeze_screen = v, cx))
+                        .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")
+                        .disabled(now.area_selection != AreaSelection::Kiri),
+                ],
             ),
             group(
                 "Screen",

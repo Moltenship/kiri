@@ -47,7 +47,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 ## Requirements per feature
 
 ### 01 Area capture
-- Capture Area runs the system grabber, `screencapture -i`, as the alternative does, so the crosshair, coordinates, and keys are the system's. Settings → Capture → Freeze the screen switches to Kiri's own overlay, which selects on a still of every display taken at the hotkey, so menus and hover states stay put. Text, scrolling, window, and Add Capture selections always use Kiri's overlay.
+- Settings → Capture → Selection picks how Capture Area selects. macOS, the default, runs the system grabber, `screencapture -i`, as the alternative does, so the crosshair, coordinates, and keys are the system's. Kiri runs Kiri's own overlay, and options that only it can offer live under that choice, such as Freeze the screen, which selects on a still of every display taken at the hotkey so menus and hover states stay put. Text, scrolling, window, and Add Capture selections always use Kiri's overlay, and freeze only when Kiri is chosen.
 - Kiri's overlay copies the system grabber: the system's own crosshair, or its camera when picking a window, read from the OS, with the numbers drawn into the cursor the way the system draws them.
 - Show coordinates before dragging and width × height while dragging, in the editor's unit.
 - `Esc` cancels, releasing the mouse confirms. Decide what a click without a drag does (the alternative ignores it).

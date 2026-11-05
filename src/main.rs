@@ -586,9 +586,8 @@ pub fn window_style(cx: &App) -> (settings::WindowBackground, u32) {
     (s.window_background, s.window_background_color)
 }
 
-/// The system's own area selection, as the alternative uses, unless the screen has to freeze.
 fn select_area(at: Instant, cx: &mut App) {
-    if settings::get(cx).freeze_screen {
+    if settings::get(cx).area_selection == settings::AreaSelection::Kiri {
         return start_overlay(overlay::Mode::Area, at, None, cx);
     }
     static SELECTING: AtomicBool = AtomicBool::new(false);
@@ -617,7 +616,8 @@ fn select_area(at: Instant, cx: &mut App) {
 
 fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {
     let displays: Vec<u32> = cx.displays().iter().map(|d| u64::from(d.id()) as u32).collect();
-    let freeze = settings::get(cx).freeze_screen;
+    let s = settings::get(cx);
+    let freeze = s.freeze_screen && s.area_selection == settings::AreaSelection::Kiri;
     cx.spawn(async move |cx| {
         let windows = match mode {
             overlay::Mode::Window | overlay::Mode::Area => window_capture::list_windows().await,
