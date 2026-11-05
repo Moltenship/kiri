@@ -382,9 +382,9 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
 
     let tray = TrayIconBuilder::new().with_menu(Box::new(tray_menu(&settings::Settings::default(), None, false)));
     #[cfg(target_os = "macos")]
-    let tray = tray.with_icon_templated(tray_glyph());
+    let tray = tray.with_icon_templated(tray_glyph(false));
     #[cfg(not(target_os = "macos"))]
-    let tray = tray.with_icon(tray_glyph());
+    let tray = tray.with_icon(tray_glyph(false));
     let tray = tray.with_tooltip("Kiri").build().expect("tray icon");
 
     Resident {
@@ -455,6 +455,8 @@ pub fn refresh_tray(cx: &mut App) {
     if let Some(item) = tray.ns_status_item() {
         mac::set_tray_badge(&item, available.is_some());
     }
+    #[cfg(windows)]
+    let _ = tray.set_icon(Some(tray_glyph(available.is_some())));
 }
 
 pub fn open_file(cx: &mut App) {
@@ -913,7 +915,8 @@ fn red_dot() -> tray_icon::menu::Icon {
     tray_icon::menu::Icon::from_rgba(rgba, n, n).expect("dot icon")
 }
 
-fn tray_glyph() -> tray_icon::Icon {
+/// `badge` marks an available update; macOS adds it as a subview, since a template takes no color.
+fn tray_glyph(badge: bool) -> tray_icon::Icon {
     use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
     let n = 36;
     let mut pixmap = Pixmap::new(n, n).expect("icon pixmap");
@@ -940,5 +943,10 @@ fn tray_glyph() -> tray_icon::Icon {
     }
     pb.close();
     pixmap.fill_path(&pb.finish().expect("icon path"), &paint, FillRule::Winding, unit, None);
+    if badge {
+        paint.set_color_rgba8(255, 59, 48, 255);
+        let dot = PathBuilder::from_circle(0.86, 0.82, 0.13).expect("badge");
+        pixmap.fill_path(&dot, &paint, FillRule::Winding, unit, None);
+    }
     tray_icon::Icon::from_rgba(pixmap.take(), n, n).expect("icon rgba")
 }

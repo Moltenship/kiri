@@ -11,7 +11,7 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 - Windows: Launch at Login.
 - Windows: Print, on one page, landscape when the image is wide.
 - Windows: Kiri.exe has Kiri's icon, in Explorer, the taskbar, and Alt+Tab.
-- Windows: updates from GitHub releases, which carry Kiri for Windows as `Kiri-windows-x64.zip`.
+- Windows: updates from GitHub releases, which carry Kiri for Windows as `Kiri-windows-x64.zip`; a red dot on the tray icon tells of one.
 - Windows: Scrolling Capture, down or up, by itself or by hand.
 - Windows: area capture shows the pointer's position, and the selection's size while dragging, beside the pointer.
 - Windows: the editor's Menu button lists every command with its shortcut, as the macOS menu bar does, and F11 toggles full screen.
