@@ -54,6 +54,28 @@ pub fn set_appearance(dark: Option<bool>) {
     NSApplication::sharedApplication(mtm).setAppearance(appearance.as_deref());
 }
 
+/// While alive and Kiri is frontmost, macOS shortcuts such as ⇧⌘5 reach Kiri as plain key presses.
+pub struct SystemKeysOff(*mut std::ffi::c_void);
+
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn PushSymbolicHotKeyMode(options: u32) -> *mut std::ffi::c_void;
+    fn PopSymbolicHotKeyMode(token: *mut std::ffi::c_void);
+}
+
+impl SystemKeysOff {
+    pub fn new() -> Self {
+        const ALL_DISABLED: u32 = 1;
+        Self(unsafe { PushSymbolicHotKeyMode(ALL_DISABLED) })
+    }
+}
+
+impl Drop for SystemKeysOff {
+    fn drop(&mut self) {
+        unsafe { PopSymbolicHotKeyMode(self.0) }
+    }
+}
+
 /// Turns off the macOS ⇧⌘3 and ⇧⌘4 screenshot shortcuts, so they can be Kiri's.
 /// `activateSettings -u` applies symbolic hotkeys without logging out.
 pub fn release_screenshot_keys() -> std::io::Result<()> {

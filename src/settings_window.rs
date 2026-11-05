@@ -498,23 +498,36 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
 
 pub const KEYBOARD_SETTINGS: &str = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts";
 
+struct Recording(Option<Capture>);
+
+impl Global for Recording {}
+
 struct Recorder {
     focus: FocusHandle,
-    _restore: Subscription,
+    _subscriptions: [Subscription; 2],
 }
 
-/// Global hotkeys are off while recording, so pressing a bound shortcut records it
-/// instead of starting a capture.
+/// Kiri's and macOS's global shortcuts are off while recording, so pressing a bound
+/// shortcut records it instead of starting a capture.
 fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
     let state = window.use_keyed_state(("recorder", capture as usize), cx, |window, cx| {
         let focus = cx.focus_handle();
+        let suspend = cx.on_focus_in(&focus, window, move |_, _, cx| {
+            cx.set_global(Recording(Some(capture)));
+            crate::suspend_hotkeys(cx);
+        });
         let restore = cx.on_focus_out(&focus, window, move |_, _, _, cx| {
+            // Focus-in of the next recorder may run first; then it owns the suspension.
+            if cx.try_global::<Recording>().is_some_and(|r| r.0 != Some(capture)) {
+                return;
+            }
+            cx.set_global(Recording(None));
             for keys in crate::reload_hotkeys(cx) {
                 crate::toast::show(format!("{} is taken by another app", pretty(&keys)), cx);
             }
             crate::refresh_tray(cx);
         });
-        Recorder { focus, _restore: restore }
+        Recorder { focus, _subscriptions: [suspend, restore] }
     });
     let focus = state.read(cx).focus.clone();
     let recording = focus.is_focused(window);
@@ -543,10 +556,7 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
         .text_color(if recording || keys.is_none() { theme.muted_foreground } else { theme.foreground })
         .cursor_pointer()
         .child(label)
-        .on_click(move |_, window, cx| {
-            crate::suspend_hotkeys(cx);
-            focus.focus(window, cx);
-        })
+        .on_click(move |_, window, cx| focus.focus(window, cx))
         .on_key_down(move |e: &KeyDownEvent, window, cx| {
             cx.stop_propagation();
             let k = &e.keystroke;

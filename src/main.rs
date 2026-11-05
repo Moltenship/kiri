@@ -126,6 +126,7 @@ struct Resident {
     registered: Vec<HotKey>,
     bound: Arc<Mutex<HashMap<u32, Capture>>>,
     escape: HotKey,
+    system_keys_off: Option<mac::SystemKeysOff>,
 }
 
 impl Global for Resident {}
@@ -149,6 +150,7 @@ pub fn suspend_hotkeys(cx: &mut App) {
     let _ = resident.hotkeys.unregister_all(&resident.registered);
     resident.registered.clear();
     resident.bound.lock().unwrap().clear();
+    resident.system_keys_off.get_or_insert_with(mac::SystemKeysOff::new);
 }
 
 /// Re-reads the capture hotkeys from settings. Returns the ones the system refused.
@@ -158,6 +160,7 @@ pub fn reload_hotkeys(cx: &mut App) -> Vec<String> {
         .filter_map(|&c| settings::get(cx).hotkey(c).map(|k| (c, k)))
         .collect();
     let resident = cx.global_mut::<Resident>();
+    resident.system_keys_off = None;
     let _ = resident.hotkeys.unregister_all(&resident.registered);
     resident.registered.clear();
     let mut bound = resident.bound.lock().unwrap();
@@ -326,6 +329,7 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
         registered: Vec::new(),
         bound,
         escape,
+        system_keys_off: None,
     }
 }
 
