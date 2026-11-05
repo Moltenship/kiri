@@ -48,5 +48,4 @@ spctl --assess --type open --context context:primary-signature "$DMG"
 echo "Built $DMG ($VERSION)"
 
 [ "${1:-}" = "--publish" ] || exit 0
-case $VERSION in *-*) PRE=--prerelease ;; *) PRE= ;; esac
-printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$DMG" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - $PRE
+printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$DMG" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - --latest
