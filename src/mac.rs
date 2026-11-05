@@ -134,22 +134,61 @@ fn screenshot_cursor(window_pick: bool) -> Option<objc2::rc::Retained<NSCursor>>
     CURSORS.with(|c| c[window_pick as usize].clone())
 }
 
+pub fn has_screenshot_cursor() -> bool {
+    screenshot_cursor(false).is_some()
+}
+
 /// `hot` comes from the cursor's info.plist, in points from the top-left.
 fn load_cursor(name: &str, hot_x: f64, hot_y: f64) -> Option<objc2::rc::Retained<NSCursor>> {
     const DIR: &str = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors";
     let path = NSString::from_str(&format!("{DIR}/{name}/cursor.pdf"));
-    let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &path)?;
+    let Some(image) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path) else {
+        eprintln!("kiri: no system cursor {name}");
+        return None;
+    };
     Some(NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, CGPoint::new(hot_x, hot_y)))
 }
 
-/// Shows the system screenshot cursor over an overlay window. Its cursor rects are turned
-/// off, or GPUI's would put its own cursor back. Returns false when the OS has none.
+/// Shows the system screenshot cursor over an overlay window. Kiri isn't the active app
+/// while selecting, so only a cursor rect sticks, and AppKit only applies the rects a view
+/// gives from `resetCursorRects`. The overlay's view gets a subclass whose rect is ours.
 pub fn set_screenshot_cursor(window: &Window, window_pick: bool) -> bool {
-    let Some(cursor) = screenshot_cursor(window_pick) else { return false };
-    if let Some(ns_window) = ns_view(window).and_then(|v| v.window()) {
-        ns_window.disableCursorRects();
+    use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
+    use std::cell::Cell;
+    thread_local! {
+        static PICK: Cell<bool> = const { Cell::new(false) };
+        static CLASS: Cell<Option<&'static AnyClass>> = const { Cell::new(None) };
     }
-    cursor.set();
+    extern "C-unwind" fn reset_cursor_rects(this: &AnyObject, _: Sel) {
+        // SAFETY: only overlay views, which are NSViews, get this subclass.
+        let view = unsafe { &*(this as *const AnyObject as *const NSView) };
+        if let Some(cursor) = screenshot_cursor(PICK.get()) {
+            view.addCursorRect_cursor(view.bounds(), &cursor);
+        }
+    }
+    let (Some(_), Some(view)) = (screenshot_cursor(window_pick), ns_view(window)) else {
+        return false;
+    };
+    let current = view.class();
+    let class = CLASS.get().filter(|c| *c == current || c.superclass() == Some(current)).or_else(|| {
+        let mut builder = ClassBuilder::new(c"KiriOverlayView", current)?;
+        unsafe { builder.add_method(objc2::sel!(resetCursorRects), reset_cursor_rects as extern "C-unwind" fn(_, _)) };
+        let class = builder.register();
+        CLASS.set(Some(class));
+        Some(class)
+    });
+    let Some(class) = class else { return false };
+    let swapped = current != class;
+    if swapped {
+        // SAFETY: the subclass adds no ivars, only an override, so the object layout is unchanged.
+        unsafe { AnyObject::set_class(view.as_ref(), class) };
+    }
+    if swapped || PICK.get() != window_pick {
+        PICK.set(window_pick);
+        if let Some(ns_window) = view.window() {
+            ns_window.invalidateCursorRectsForView(view);
+        }
+    }
     true
 }
 

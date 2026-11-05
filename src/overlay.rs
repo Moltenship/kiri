@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::ActiveTheme;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use crate::mac::{self, Shot};
@@ -84,7 +85,6 @@ pub fn start(screens: Vec<(u32, Option<Shot>)>, mode: Mode, targets: Vec<WindowI
                 // After open, so GPUI's own show does not reorder the window again.
                 let _ = handle.update(cx, |_, window, _| {
                     mac::make_overlay(window, display);
-                    mac::set_screenshot_cursor(window, mode == Mode::Window);
                 });
                 // The theme fills every root; a live overlay must let the screen show through.
                 if let Some(root) = handle.downcast::<gpui_kit::base::Root>() {
@@ -384,8 +384,12 @@ impl Render for Overlay {
             .track_focus(&self.focus)
             .size_full()
             .relative()
-            .cursor(if picking { CursorStyle::PointingHand } else { CursorStyle::Crosshair })
-            .on_key_down(cx.listener(|this, e: &KeyDownEvent, window, cx| match e.keystroke.key.as_str() {
+            // GPUI's cursor only when the system's is missing: setting one makes GPUI rebuild
+            // the cursor rects, which would drop the system cursor put in at paint.
+            .when(!mac::has_screenshot_cursor(), |d| {
+                d.cursor(if picking { CursorStyle::PointingHand } else { CursorStyle::Crosshair })
+            })
+            .on_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| match e.keystroke.key.as_str() {
                 "tab" if this.picking && this.press(TAB, cx) => {
                     this.skip += 1;
                     cx.notify();
@@ -398,7 +402,6 @@ impl Render for Overlay {
                     if this.drag.is_none() && matches!(this.mode, Mode::Area | Mode::Window) {
                         this.picking = !this.picking;
                         this.skip = 0;
-                        mac::set_screenshot_cursor(window, this.picking);
                     }
                     this.refresh(cx);
                 }
@@ -434,6 +437,7 @@ impl Render for Overlay {
                 canvas(
                     |_, _, _| {},
                     move |_, _, window, _| {
+                        mac::set_screenshot_cursor(window, picking);
                         for (r, tile) in tiles {
                             let b = Bounds::new(
                                 point(px(r.x as f32 / scale), px(r.y as f32 / scale)),
