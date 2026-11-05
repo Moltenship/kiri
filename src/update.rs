@@ -2,9 +2,11 @@
 //! out, and Update downloads it, verifies its signature, swaps the bundle, and relaunches.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use futures::StreamExt;
+use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::{App, Global};
 
 const RELEASES: &str = "https://api.github.com/repos/Moltenship/kiri/releases?per_page=10";
@@ -16,11 +18,37 @@ const REQUIREMENT: &str =
 #[derive(Default)]
 pub struct Update {
     busy: bool,
-    /// The newest release above this build: its version and the download URL.
-    pub available: Option<(String, String)>,
+    /// Between Update and the relaunch.
+    pub installing: bool,
+    /// The newest release above this build.
+    pub available: Option<Release>,
 }
 
 impl Global for Update {}
+
+#[derive(Clone)]
+pub struct Release {
+    pub version: String,
+    url: String,
+    /// Of the DMG, in bytes, for the download's percentage.
+    size: u64,
+}
+
+enum Step {
+    Download(Option<f32>),
+    Check,
+    Install,
+}
+
+fn say(version: &str, step: Step, cx: &mut App) {
+    let (text, fraction) = match step {
+        Step::Download(Some(f)) => (format!("Downloading Kiri {version}… {}%", (f * 100.) as u32), Some(f)),
+        Step::Download(None) => (format!("Downloading Kiri {version}…"), None),
+        Step::Check => ("Checking the download…".to_string(), None),
+        Step::Install => (format!("Installing Kiri {version}…"), None),
+    };
+    crate::toast::progress(text, fraction, cx);
+}
 
 /// The `.app` Kiri runs from; `None` for a bare binary, which can't update itself.
 pub fn bundle() -> Option<PathBuf> {
@@ -68,7 +96,7 @@ pub fn check(manual: bool, cx: &mut App) {
             cx.global_mut::<Update>().busy = false;
             match found {
                 Ok(Some(release)) => {
-                    let version = release.0.clone();
+                    let version = release.version.clone();
                     cx.global_mut::<Update>().available = Some(release);
                     crate::refresh_tray(cx);
                     if manual {
@@ -87,18 +115,34 @@ pub fn check(manual: bool, cx: &mut App) {
 
 /// Downloads the available release, swaps it in, and relaunches Kiri.
 pub fn install(cx: &mut App) {
-    let (Some(app), Some((version, url))) = (bundle(), cx.default_global::<Update>().available.clone()) else {
+    let (Some(app), Some(release)) = (bundle(), cx.default_global::<Update>().available.clone()) else {
         return;
     };
     if std::mem::replace(&mut cx.global_mut::<Update>().busy, true) {
         return;
     }
-    crate::toast::show(format!("Downloading Kiri {version}…"), cx);
+    cx.global_mut::<Update>().installing = true;
+    crate::refresh_tray(cx);
+    let version = release.version.clone();
+    say(&version, Step::Download(None), cx);
     cx.spawn(async move |cx| {
-        let done = cx.background_executor().spawn(async move { download(&url).and_then(|staged| swap(&staged)) }).await;
+        let (tx, mut steps) = futures::channel::mpsc::unbounded();
+        let work = cx.background_executor().spawn(async move {
+            let staged = download(&release, &tx)?;
+            let _ = tx.unbounded_send(Step::Install);
+            swap(&staged)
+        });
+        // Ends when `work` finishes and drops `tx`.
+        while let Some(step) = steps.next().await {
+            cx.update(|cx| say(&version, step, cx));
+        }
+        let done = work.await;
         cx.update(|cx| {
-            cx.global_mut::<Update>().busy = false;
+            let update = cx.global_mut::<Update>();
+            update.busy = false;
+            update.installing = false;
             if let Err(err) = done {
+                crate::refresh_tray(cx);
                 crate::toast::show(format!("Couldn't update: {err}"), cx);
                 return;
             }
@@ -111,10 +155,10 @@ pub fn install(cx: &mut App) {
     .detach();
 }
 
-/// The newest release above this build, as its version and download URL; `None` when up to date.
-fn latest() -> Result<Option<(String, String)>, String> {
+/// The newest release above this build; `None` when up to date.
+fn latest() -> Result<Option<Release>, String> {
     #[derive(serde::Deserialize)]
-    struct Release {
+    struct Published {
         tag_name: String,
         draft: bool,
         assets: Vec<Asset>,
@@ -123,27 +167,49 @@ fn latest() -> Result<Option<(String, String)>, String> {
     struct Asset {
         name: String,
         browser_download_url: String,
+        size: u64,
     }
     let body = run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", RELEASES]))?;
-    let releases: Vec<Release> = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+    let releases: Vec<Published> = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
     Ok(releases
         .into_iter()
         .filter(|r| !r.draft)
         .filter_map(|r| {
-            let url = r.assets.into_iter().find(|a| a.name == ASSET)?.browser_download_url;
-            Some((r.tag_name.trim_start_matches('v').to_string(), url))
+            let asset = r.assets.into_iter().find(|a| a.name == ASSET)?;
+            Some(Release { version: r.tag_name.trim_start_matches('v').to_string(), url: asset.browser_download_url, size: asset.size })
         })
-        .filter(|(v, _)| newer(v, env!("CARGO_PKG_VERSION")))
-        .max_by(|a, b| if newer(&a.0, &b.0) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }))
+        .filter(|r| newer(&r.version, env!("CARGO_PKG_VERSION")))
+        .max_by(|a, b| if newer(&a.version, &b.version) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }))
 }
 
-/// Downloads the DMG at `url`, copies Kiri out of it, and checks that Kiri's Developer ID signed it.
-fn download(url: &str) -> Result<PathBuf, String> {
+/// Downloads the release's DMG, copies Kiri out of it, and checks that Kiri's Developer ID signed it.
+fn download(release: &Release, steps: &UnboundedSender<Step>) -> Result<PathBuf, String> {
     let dir = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Caches/Kiri/Update");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dmg = dir.join(ASSET);
-    run(Command::new("/usr/bin/curl").args(["-fsSL", "--max-time", "600", "-o"]).arg(&dmg).arg(url))?;
+    let mut curl = Command::new("/usr/bin/curl")
+        .args(["-fsSL", "--max-time", "600", "-o"])
+        .arg(&dmg)
+        .arg(&release.url)
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let mut shown = None;
+    while curl.try_wait().map_err(|e| e.to_string())?.is_none() {
+        let got = std::fs::metadata(&dmg).map_or(0, |m| m.len());
+        let percent = (release.size > 0).then(|| (got * 100 / release.size).min(100));
+        if percent != shown {
+            shown = percent;
+            let _ = steps.unbounded_send(Step::Download(percent.map(|p| p as f32 / 100.)));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let out = curl.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let _ = steps.unbounded_send(Step::Check);
     let volume = dir.join("volume");
     run(Command::new("/usr/bin/hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"]).arg(&volume).arg(&dmg))?;
     let staged = dir.join("Kiri.app");

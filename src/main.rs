@@ -318,7 +318,7 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
     }));
 
     let tray = TrayIconBuilder::new()
-        .with_menu(Box::new(tray_menu(&settings::Settings::default(), None)))
+        .with_menu(Box::new(tray_menu(&settings::Settings::default(), None, false)))
         .with_icon_templated(tray_glyph())
         .with_tooltip("Kiri")
         .build()
@@ -335,9 +335,10 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
 }
 
 /// Same order as the alternative: the frequent captures on top, the rest under "More".
-fn tray_menu(s: &settings::Settings, available: Option<&str>) -> Menu {
+fn tray_menu(s: &settings::Settings, available: Option<&str>, installing: bool) -> Menu {
     let update = match available {
         _ if settings::dev() => IconMenuItem::with_id("update", "Kiri Dev", false, None, None),
+        Some(version) if installing => IconMenuItem::with_id("update", format!("Updating to Kiri {version}…"), false, None, None),
         Some(version) => IconMenuItem::with_id("update", format!("Update to Kiri {version}…"), true, Some(red_dot()), None),
         None => IconMenuItem::with_id("update", "Check for Updates…", true, None, None),
     };
@@ -389,8 +390,10 @@ fn tray_menu(s: &settings::Settings, available: Option<&str>) -> Menu {
 }
 
 pub fn refresh_tray(cx: &mut App) {
-    let available = cx.try_global::<update::Update>().and_then(|u| u.available.as_ref()).map(|(v, _)| v.clone());
-    let menu = tray_menu(settings::get(cx), available.as_deref());
+    let update = cx.try_global::<update::Update>();
+    let available = update.and_then(|u| u.available.as_ref()).map(|r| r.version.clone());
+    let installing = update.is_some_and(|u| u.installing);
+    let menu = tray_menu(settings::get(cx), available.as_deref(), installing);
     let tray = &cx.global::<Resident>().tray;
     tray.set_menu(Some(Box::new(menu)));
     if let Some(item) = tray.ns_status_item() {

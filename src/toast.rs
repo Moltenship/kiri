@@ -12,7 +12,7 @@ use gpui_kit::*;
 use crate::mac;
 
 #[derive(Default)]
-struct Current(Option<AnyWindowHandle>);
+struct Current(Option<(AnyWindowHandle, Entity<Toast>)>);
 
 impl Global for Current {}
 
@@ -51,6 +51,25 @@ enum Style {
     Note,
     Done,
     Countdown,
+    Progress,
+}
+
+/// Stays up until another toast or `hide`, and updates in place; `fraction` (0 to 1) adds a bar.
+pub fn progress(text: impl Into<SharedString>, fraction: Option<f32>, cx: &mut App) {
+    let text = text.into();
+    let toast = match cx.try_global::<Current>().and_then(|c| c.0.clone()) {
+        Some((_, toast)) if toast.read(cx).style == Style::Progress => toast,
+        _ => {
+            open(text.clone(), None, Style::Progress, cx);
+            let Some((_, toast)) = cx.try_global::<Current>().and_then(|c| c.0.clone()) else { return };
+            toast
+        }
+    };
+    toast.update(cx, |toast, cx| {
+        toast.text = text;
+        toast.fraction = fraction;
+        cx.notify();
+    });
 }
 
 /// The delayed-capture countdown; `hide` takes it down before the shot.
@@ -59,7 +78,7 @@ pub fn countdown(seconds: u32, cx: &mut App) {
 }
 
 pub fn hide(cx: &mut App) {
-    if let Some(old) = cx.try_global::<Current>().and_then(|c| c.0) {
+    if let Some((old, _)) = cx.try_global::<Current>().and_then(|c| c.0.clone()) {
         let _ = old.update(cx, |_, window, _| window.remove_window());
     }
     cx.set_global(Current(None));
@@ -98,19 +117,22 @@ fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) 
         ..Default::default()
     };
     let opened = crate::open_clear_window(options, cx, |_, cx| {
-        cx.new(|_| Toast { text, action, style })
+        cx.new(|_| Toast { text, action, style, fraction: None })
     });
-    let Ok((handle, _)) = opened else { return };
+    let Ok((handle, toast)) = opened else { return };
     let _ = handle.update(cx, |_, window, _| {
         mac::make_floating(window, mac::Level::Status, false, !clickable)
     });
-    cx.set_global(Current(Some(handle)));
+    cx.set_global(Current(Some((handle, toast))));
+    if style == Style::Progress {
+        return;
+    }
     cx.spawn(async move |cx| {
         let ms = if clickable { 4000 } else { 1800 };
         cx.background_executor().timer(Duration::from_millis(ms)).await;
         cx.update(|cx| {
             let _ = handle.update(cx, |_, window, _| window.remove_window());
-            if cx.try_global::<Current>().and_then(|c| c.0) == Some(handle) {
+            if cx.try_global::<Current>().and_then(|c| c.0.as_ref().map(|c| c.0)) == Some(handle) {
                 cx.set_global(Current(None));
             }
         });
@@ -122,6 +144,7 @@ struct Toast {
     text: SharedString,
     action: Option<Action>,
     style: Style,
+    fraction: Option<f32>,
 }
 
 impl Render for Toast {
@@ -162,6 +185,17 @@ impl Render for Toast {
                 .max_w(px(400.))
                 .overflow_hidden()
                 .child(div().truncate().child(self.text.clone()))
+                .when_some(self.fraction, |d, fraction| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .w(px(72.))
+                            .h(px(4.))
+                            .rounded_full()
+                            .bg(cx.theme().muted)
+                            .child(div().h_full().rounded_full().bg(cx.theme().primary).w(px(72. * fraction.clamp(0., 1.)))),
+                    )
+                })
                 .when_some(action, |d, (label, run)| {
                     d.child(
                         div()
