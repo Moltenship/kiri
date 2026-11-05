@@ -1,9 +1,12 @@
+#[cfg(target_os = "macos")]
 mod alloc;
 mod backdrop;
 mod doc;
 mod editor;
 mod export;
+#[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
 mod ocr;
 mod onboarding;
 mod overlay;
@@ -11,16 +14,26 @@ mod paint;
 mod pin;
 mod pixels;
 mod preview;
+#[cfg(target_os = "macos")]
 mod scrolling;
 mod settings;
 mod settings_window;
 mod single;
+// Only scrolling capture stitches, and Windows has none yet.
+#[cfg_attr(windows, allow(dead_code))]
 mod stitch;
 mod text_edit;
 mod tiled;
 mod toast;
 mod update;
+#[cfg(target_os = "macos")]
 mod window_capture;
+#[cfg(windows)]
+mod win;
+
+// Windows answers to the macOS names, so the shared code calls one set of functions.
+#[cfg(windows)]
+use win::{self as mac, ocr, scrolling, window_capture};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -83,6 +96,7 @@ gpui_kit::assets::icon_assets!(
     ]
 );
 
+#[cfg(target_os = "macos")]
 #[global_allocator]
 static ALLOCATOR: alloc::PixelAwareAlloc = alloc::PixelAwareAlloc;
 
@@ -161,6 +175,14 @@ struct Resident {
 }
 
 impl Global for Resident {}
+
+/// Bindings are written with `cmd`, which is Ctrl on Windows.
+pub fn keys(keys: &'static str) -> &'static str {
+    match cfg!(windows) {
+        true => Box::leak(keys.replace("cmd", "ctrl").into_boxed_str()),
+        false => keys,
+    }
+}
 
 /// A focused overlay can still miss `Esc` while AppKit finishes closing the
 /// previous one, so `Esc` is a global hotkey for exactly as long as an overlay is up.
@@ -250,6 +272,8 @@ fn main() {
         })
     });
     let capture = capture.map(|c| (c, then));
+    #[cfg(windows)]
+    win::dpi_aware();
     if demo.is_none() && single::forward(open.as_deref().map(std::path::Path::new), capture) {
         return;
     }
@@ -279,7 +303,8 @@ fn main() {
             Some("stress") => Some(Command::StressTest),
             _ => None,
         };
-        if first_launch && capture.is_none() {
+        // The welcome window walks through macOS permissions and shortcuts.
+        if first_launch && capture.is_none() && cfg!(target_os = "macos") {
             let _ = tx.unbounded_send(Command::Welcome);
         }
         if let Some(demo) = demo {
@@ -347,12 +372,12 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
         let _ = tx.unbounded_send(command);
     }));
 
-    let tray = TrayIconBuilder::new()
-        .with_menu(Box::new(tray_menu(&settings::Settings::default(), None, false)))
-        .with_icon_templated(tray_glyph())
-        .with_tooltip("Kiri")
-        .build()
-        .expect("tray icon");
+    let tray = TrayIconBuilder::new().with_menu(Box::new(tray_menu(&settings::Settings::default(), None, false)));
+    #[cfg(target_os = "macos")]
+    let tray = tray.with_icon_templated(tray_glyph());
+    #[cfg(not(target_os = "macos"))]
+    let tray = tray.with_icon(tray_glyph());
+    let tray = tray.with_tooltip("Kiri").build().expect("tray icon");
 
     Resident {
         tray,
@@ -426,6 +451,7 @@ pub fn refresh_tray(cx: &mut App) {
     let menu = tray_menu(settings::get(cx), available.as_deref(), installing);
     let tray = &cx.global::<Resident>().tray;
     tray.set_menu(Some(Box::new(menu)));
+    #[cfg(target_os = "macos")]
     if let Some(item) = tray.ns_status_item() {
         mac::set_tray_badge(&item, available.is_some());
     }
@@ -550,6 +576,10 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
         toast::show("Kiri needs Screen Recording permission", cx);
         return;
     }
+    if cfg!(windows) && matches!(capture, Capture::Window | Capture::ActiveWindow | Capture::Scrolling | Capture::ScrollingUp | Capture::Text) {
+        toast::show("Not available on Windows yet", cx);
+        return;
+    }
     match capture {
         Capture::Area | Capture::Text | Capture::Scrolling | Capture::ScrollingUp => {
             let mode = match capture {
@@ -621,7 +651,8 @@ pub fn window_style(cx: &App) -> (settings::WindowBackground, u32) {
 }
 
 fn select_area(at: Instant, cx: &mut App) {
-    if settings::get(cx).area_selection == settings::AreaSelection::Kiri {
+    // Windows has no system selection to hand off to.
+    if cfg!(windows) || settings::get(cx).area_selection == settings::AreaSelection::Kiri {
         return start_overlay(overlay::Mode::Area, at, None, cx);
     }
     static SELECTING: AtomicBool = AtomicBool::new(false);
@@ -651,7 +682,7 @@ fn select_area(at: Instant, cx: &mut App) {
 fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {
     let displays: Vec<u32> = cx.displays().iter().map(|d| u64::from(d.id()) as u32).collect();
     let s = settings::get(cx);
-    let freeze = s.freeze_screen && s.area_selection == settings::AreaSelection::Kiri;
+    let freeze = s.freeze_screen && (cfg!(windows) || s.area_selection == settings::AreaSelection::Kiri);
     cx.spawn(async move |cx| {
         let windows = match mode {
             overlay::Mode::Window | overlay::Mode::Area => window_capture::list_windows().await,
@@ -876,7 +907,12 @@ fn tray_glyph() -> tray_icon::Icon {
     let n = 36;
     let mut pixmap = Pixmap::new(n, n).expect("icon pixmap");
     let mut paint = Paint::default();
-    paint.set_color_rgba8(0, 0, 0, 255);
+    // macOS tints the template itself; Windows shows the pixels as drawn.
+    #[cfg(windows)]
+    let ink = if mac::light_taskbar() { 0 } else { 255 };
+    #[cfg(not(windows))]
+    let ink = 0;
+    paint.set_color_rgba8(ink, ink, ink, 255);
     paint.anti_alias = true;
     // Drawn in a unit box, y up.
     let unit = Transform::from_row(n as f32, 0., 0., -(n as f32), 0., n as f32);

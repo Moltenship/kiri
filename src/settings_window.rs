@@ -19,7 +19,7 @@ use crate::settings::{self, AreaSelection, Capture, ColorFormat, Preview, Window
 actions!(settings_window, [CloseSettings]);
 
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("cmd-w", CloseSettings, Some("SettingsWindow"))]);
+    cx.bind_keys([KeyBinding::new(crate::keys("cmd-w"), CloseSettings, Some("SettingsWindow"))]);
 }
 
 /// macOS's own shortcuts, read again whenever the settings window comes forward, since

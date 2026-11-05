@@ -17,10 +17,10 @@ actions!(pin, [CopyAndClose, ClosePin, EditPin]);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new("cmd-c", CopyAndClose, Some("Pin")),
+        KeyBinding::new(crate::keys("cmd-c"), CopyAndClose, Some("Pin")),
         KeyBinding::new("escape", ClosePin, Some("Pin")),
-        KeyBinding::new("cmd-w", ClosePin, Some("Pin")),
-        KeyBinding::new("cmd-e", EditPin, Some("Pin")),
+        KeyBinding::new(crate::keys("cmd-w"), ClosePin, Some("Pin")),
+        KeyBinding::new(crate::keys("cmd-e"), EditPin, Some("Pin")),
     ]);
 }
 
@@ -229,7 +229,10 @@ impl Pin {
         if let Some(view) = mac::ns_view_ptr(window) {
             let at = tray_icon::menu::dpi::LogicalPosition::new(position.x.as_f32() as f64, position.y.as_f32() as f64);
             // SAFETY: the view belongs to this live window for the whole modal menu loop.
+            #[cfg(target_os = "macos")]
             unsafe { menu.show_context_menu_for_nsview(view, Some(at.into())) };
+            #[cfg(windows)]
+            unsafe { menu.show_context_menu_for_hwnd(view as isize, Some(at.into())) };
         }
     }
 }

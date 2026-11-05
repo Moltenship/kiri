@@ -2,6 +2,7 @@
 //! so there is never a second tray icon or a fight over the hotkeys.
 
 use std::io::{BufRead, BufReader, Write};
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
@@ -12,10 +13,14 @@ use crate::settings::Capture;
 
 /// Keyed by the settings file, so a Kiri started with another `HOME` runs on its own.
 /// It lives in the per-user temp dir because socket paths can't exceed 104 bytes.
+/// On Windows it is a named pipe instead.
 fn socket() -> PathBuf {
     use std::hash::{Hash, Hasher};
     let mut h = std::hash::DefaultHasher::new();
     crate::settings::path().hash(&mut h);
+    if cfg!(windows) {
+        return PathBuf::from(format!(r"\\.\pipe\kiri-{:x}", h.finish()));
+    }
     std::env::temp_dir().join(format!("kiri-{:x}.sock", h.finish()))
 }
 
@@ -55,7 +60,11 @@ impl Then {
 /// Sends `open` (a file to edit), a capture, or nothing (show Settings) to a running Kiri.
 /// Returns false when none is running.
 pub fn forward(open: Option<&Path>, capture: Option<(Capture, Option<Then>)>) -> bool {
-    let Ok(mut stream) = UnixStream::connect(socket()) else {
+    #[cfg(unix)]
+    let stream = UnixStream::connect(socket());
+    #[cfg(windows)]
+    let stream = std::fs::OpenOptions::new().write(true).open(socket());
+    let Ok(mut stream) = stream else {
         return false;
     };
     let line = match (open.and_then(|p| std::path::absolute(p).ok()), capture) {
@@ -69,12 +78,19 @@ pub fn forward(open: Option<&Path>, capture: Option<(Capture, Option<Then>)>) ->
 
 pub fn listen(tx: UnboundedSender<Command>) {
     let path = socket();
+    #[cfg(unix)]
     let _ = std::fs::remove_file(&path);
+    #[cfg(unix)]
     let Ok(listener) = UnixListener::bind(&path) else {
         return;
     };
+    #[cfg(unix)]
+    let incoming = std::iter::repeat_with(move || listener.accept()).flatten().map(|(stream, _)| stream);
+    // Each client gets a fresh pipe instance; the loop ends when one can't be made.
+    #[cfg(windows)]
+    let incoming = std::iter::from_fn(move || crate::mac::accept_pipe(&path));
     std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
+        for stream in incoming {
             let mut line = String::new();
             if BufReader::new(stream).read_line(&mut line).is_err() {
                 continue;

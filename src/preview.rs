@@ -17,13 +17,13 @@ actions!(preview, [CopyAndClose, Edit, Save, Pin, Recognize, Close]);
 pub fn bind_keys(cx: &mut App) {
     let c = Some("Preview");
     cx.bind_keys([
-        KeyBinding::new("cmd-c", CopyAndClose, c),
+        KeyBinding::new(crate::keys("cmd-c"), CopyAndClose, c),
         KeyBinding::new("enter", Edit, c),
-        KeyBinding::new("cmd-s", Save, c),
-        KeyBinding::new("cmd-p", Pin, c),
-        KeyBinding::new("cmd-o", Recognize, c),
+        KeyBinding::new(crate::keys("cmd-s"), Save, c),
+        KeyBinding::new(crate::keys("cmd-p"), Pin, c),
+        KeyBinding::new(crate::keys("cmd-o"), Recognize, c),
         KeyBinding::new("escape", Close, c),
-        KeyBinding::new("cmd-w", Close, c),
+        KeyBinding::new(crate::keys("cmd-w"), Close, c),
     ]);
 }
 

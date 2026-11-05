@@ -166,49 +166,49 @@ pub fn bind_keys(cx: &mut App) {
         })
     });
     cx.bind_keys([
-        KeyBinding::new("cmd-,", OpenSettings, None),
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("shift-cmd-o", OpenFile, None),
-        KeyBinding::new("shift-cmd-v", OpenClipboard, None),
-        KeyBinding::new("alt-cmd-w", CloseAll, None),
+        KeyBinding::new(crate::keys("cmd-,"), OpenSettings, None),
+        KeyBinding::new(crate::keys("cmd-q"), Quit, None),
+        KeyBinding::new(crate::keys("shift-cmd-o"), OpenFile, None),
+        KeyBinding::new(crate::keys("shift-cmd-v"), OpenClipboard, None),
+        KeyBinding::new(crate::keys("alt-cmd-w"), CloseAll, None),
     ]);
     let base = Some("Editor");
     let idle = Some("Editor && !text");
     let tools = Some("Editor && !text && !selection");
     let sel = Some("Editor && !text && selection");
     let mut keys = vec![
-        KeyBinding::new("cmd-c", CopyObjectOrClose, idle),
-        KeyBinding::new("shift-cmd-c", CopyImage, base),
-        KeyBinding::new("cmd-s", Save, base),
-        KeyBinding::new("shift-cmd-s", SaveAs, base),
-        KeyBinding::new("cmd-p", Pin, base),
-        KeyBinding::new("shift-cmd-p", Print, base),
-        KeyBinding::new("cmd-w", Close, base),
-        KeyBinding::new("cmd-z", Undo, base),
-        KeyBinding::new("shift-cmd-z", Redo, base),
+        KeyBinding::new(crate::keys("cmd-c"), CopyObjectOrClose, idle),
+        KeyBinding::new(crate::keys("shift-cmd-c"), CopyImage, base),
+        KeyBinding::new(crate::keys("cmd-s"), Save, base),
+        KeyBinding::new(crate::keys("shift-cmd-s"), SaveAs, base),
+        KeyBinding::new(crate::keys("cmd-p"), Pin, base),
+        KeyBinding::new(crate::keys("shift-cmd-p"), Print, base),
+        KeyBinding::new(crate::keys("cmd-w"), Close, base),
+        KeyBinding::new(crate::keys("cmd-z"), Undo, base),
+        KeyBinding::new(crate::keys("shift-cmd-z"), Redo, base),
         KeyBinding::new("backspace", Delete, idle),
         KeyBinding::new("delete", Delete, idle),
-        KeyBinding::new("cmd-d", Duplicate, idle),
-        KeyBinding::new("cmd-v", Paste, idle),
+        KeyBinding::new(crate::keys("cmd-d"), Duplicate, idle),
+        KeyBinding::new(crate::keys("cmd-v"), Paste, idle),
         KeyBinding::new("enter", Confirm, idle),
         KeyBinding::new("escape", Cancel, base),
-        KeyBinding::new("cmd-a", SelectAll, idle),
-        KeyBinding::new("cmd-=", ZoomIn, base),
-        KeyBinding::new("cmd-+", ZoomIn, base),
+        KeyBinding::new(crate::keys("cmd-a"), SelectAll, idle),
+        KeyBinding::new(crate::keys("cmd-="), ZoomIn, base),
+        KeyBinding::new(crate::keys("cmd-+"), ZoomIn, base),
         KeyBinding::new("w", ZoomIn, tools),
-        KeyBinding::new("cmd--", ZoomOut, base),
+        KeyBinding::new(crate::keys("cmd--"), ZoomOut, base),
         KeyBinding::new("q", ZoomOut, tools),
         KeyBinding::new("q", SelectionTopLeft, sel),
         KeyBinding::new("w", SelectionBottomRight, sel),
-        KeyBinding::new("cmd-1", ZoomFit, base),
-        KeyBinding::new("cmd-0", ZoomActual, base),
-        KeyBinding::new("cmd-2", ZoomSelection, base),
+        KeyBinding::new(crate::keys("cmd-1"), ZoomFit, base),
+        KeyBinding::new(crate::keys("cmd-0"), ZoomActual, base),
+        KeyBinding::new(crate::keys("cmd-2"), ZoomSelection, base),
         KeyBinding::new("a", Autoadjust, sel),
         KeyBinding::new("shift-]", GrowSelection, sel),
         KeyBinding::new("}", GrowSelection, sel),
         KeyBinding::new("shift-[", ShrinkSelection, sel),
         KeyBinding::new("{", ShrinkSelection, sel),
-        KeyBinding::new("cmd-o", RecognizeText, idle),
+        KeyBinding::new(crate::keys("cmd-o"), RecognizeText, idle),
         KeyBinding::new("tab", CopyColor, idle),
         KeyBinding::new("shift-tab", CopyTextColor, idle),
         KeyBinding::new("c", CopyAverageColor, sel),
@@ -1430,10 +1430,12 @@ impl Editor {
         let edit = self.editing.as_mut().unwrap();
         let k = &e.keystroke;
         let m = k.modifiers;
+        // Clipboard keys take Ctrl on Windows; line and word moves keep their macOS keys for now.
+        let cmd = m.platform || cfg!(windows) && m.control;
         let (sel, c, t) = (edit.selection(), edit.caret, text.as_str());
         let width = |s: &str| measure(s, size, bold);
         match k.key.as_str() {
-            "enter" if m.platform => {
+            "enter" if cmd => {
                 self.finish_text();
                 cx.notify();
                 return true;
@@ -1472,11 +1474,11 @@ impl Editor {
             }
             "home" => edit.go(0, m.shift),
             "end" => edit.go(t.len(), m.shift),
-            "a" if m.platform => {
+            "a" if cmd => {
                 edit.anchor = 0;
                 edit.caret = t.len();
             }
-            "c" | "x" if m.platform => {
+            "c" | "x" if cmd => {
                 if !sel.is_empty() {
                     cx.write_to_clipboard(ClipboardItem::new_string(t[sel.clone()].to_string()));
                     if k.key == "x" {
@@ -1484,7 +1486,7 @@ impl Editor {
                     }
                 }
             }
-            "v" if m.platform => {
+            "v" if cmd => {
                 if let Some(s) = cx.read_from_clipboard().and_then(|c| c.text()) {
                     edit.replace(&mut text, sel, &s);
                 }

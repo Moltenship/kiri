@@ -75,6 +75,14 @@ impl Capture {
     }
 
     fn default_hotkey(self) -> Option<&'static str> {
+        // The Windows key with Shift and a digit belongs to the taskbar.
+        if cfg!(windows) {
+            return match self {
+                Capture::Area => Some("ctrl+shift+2"),
+                Capture::Fullscreen => Some("ctrl+shift+1"),
+                _ => None,
+            };
+        }
         match self {
             Capture::Area => Some("shift+cmd+2"),
             Capture::Fullscreen => Some("shift+cmd+1"),
@@ -344,10 +352,11 @@ pub fn dev() -> bool {
 
 pub fn path() -> PathBuf {
     let dir = if dev() { "Kiri Dev" } else { "Kiri" };
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default()
-        .join(format!("Library/Application Support/{dir}/settings.json"))
+    #[cfg(windows)]
+    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default();
+    #[cfg(not(windows))]
+    let base = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Application Support");
+    base.join(dir).join("settings.json")
 }
 
 fn launch_agent_label() -> &'static str {
@@ -430,10 +439,13 @@ fn launch_agent() -> PathBuf {
 }
 
 pub fn launch_at_login() -> bool {
-    launch_agent().exists()
+    !cfg!(windows) && launch_agent().exists()
 }
 
 pub fn set_launch_at_login(on: bool) -> Result<(), String> {
+    if cfg!(windows) {
+        return Err("Not available on Windows yet".into());
+    }
     let path = launch_agent();
     if !on {
         return match std::fs::remove_file(&path) {
