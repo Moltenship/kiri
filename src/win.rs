@@ -4,8 +4,9 @@
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use gpui_kit::Window;
+use gpui_kit::{Window, WindowAppearance};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Gdi::*;
@@ -62,7 +63,29 @@ pub fn ensure_screen_access() -> bool {
     true
 }
 
-pub fn set_appearance(_dark: Option<bool>) {}
+static APPEARANCE: AtomicU8 = AtomicU8::new(0);
+
+/// `None` follows the system. GPUI only reads the system's, so Kiri's colors take this through
+/// `appearance`, and the blur behind a window through `theme_window`.
+pub fn set_appearance(dark: Option<bool>) {
+    APPEARANCE.store(dark.map_or(0, |dark| 1 + dark as u8), Ordering::Relaxed);
+}
+
+pub fn appearance(system: WindowAppearance) -> WindowAppearance {
+    match APPEARANCE.load(Ordering::Relaxed) {
+        1 => WindowAppearance::Light,
+        2 => WindowAppearance::Dark,
+        _ => system,
+    }
+}
+
+/// GPUI sets a window's light or dark compositor blur from the system's appearance.
+pub fn theme_window(window: &Window) {
+    use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+    let Some(hwnd) = hwnd(window) else { return };
+    let dark = windows::core::BOOL::from(matches!(appearance(window.appearance()), WindowAppearance::Dark | WindowAppearance::VibrantDark));
+    let _ = unsafe { DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark as *const _ as *const c_void, size_of_val(&dark) as u32) };
+}
 
 mod keys;
 pub use keys::{SystemKeysOff, SystemShortcut, release_screenshot_keys, system_shortcut, system_shortcuts};

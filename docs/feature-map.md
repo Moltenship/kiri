@@ -180,7 +180,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - One settings window: General, Capture, Editor, Hotkeys, Advanced. Short inline help for the non-obvious settings.
 - Settings live in a plain config file that can be imported and exported.
 - Expose the screenshot library in the UI. Cursor capture is left out until a capture path can include the cursor.
-- Appearance: System, Light, or Dark, picked from small drawings of a Kiri window. It sets the app's appearance, so blurred window backgrounds follow it too.
+- Appearance: System, Light, or Dark, picked from small drawings of a Kiri window. It sets the app's appearance, so blurred window backgrounds follow it too. GPUI on Windows only reads Windows' own, so Kiri picks its colors from the setting itself and sets each window's light or dark blur through DWM; the tray menu follows Windows.
 - A choice that changes how something looks is picked from small drawings: Appearance, Show in (editor or thumbnail), and Window background. Numbers without natural steps, such as max scroll height, are typed in.
 - Dropped from the alternative: uploading, license, splash, diagnostics.
 - Consider WebP as a save format.

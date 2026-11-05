@@ -752,7 +752,16 @@ fn open_root<V: Render>(
     sync_theme(cx.window_appearance(), cx);
     let mut built = None;
     let handle = cx.open_window(options, |window, cx| {
-        window.observe_window_appearance(|window, cx| sync_theme(window.appearance(), cx)).detach();
+        window
+            .observe_window_appearance(|window, cx| {
+                sync_theme(window.appearance(), cx);
+                // GPUI sets the system's blur after telling Kiri.
+                #[cfg(windows)]
+                window.on_next_frame(|window, _| mac::theme_window(window));
+            })
+            .detach();
+        #[cfg(windows)]
+        mac::theme_window(window);
         let view = build(window, cx);
         built = Some(view.clone());
         cx.new(|cx| {
@@ -767,6 +776,8 @@ fn open_root<V: Render>(
 }
 
 fn sync_theme(appearance: WindowAppearance, cx: &mut App) {
+    #[cfg(windows)]
+    let appearance = mac::appearance(appearance);
     let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
     if Theme::global(cx).mode.is_dark() != dark {
         Theme::change(appearance, None, cx);
@@ -780,6 +791,10 @@ pub fn apply_appearance(cx: &mut App) {
         settings::Appearance::Dark => Some(true),
     });
     sync_theme(cx.window_appearance(), cx);
+    #[cfg(windows)]
+    for window in cx.windows() {
+        let _ = window.update(cx, |_, window, _| mac::theme_window(window));
+    }
 }
 
 pub fn deliver_shot(shot: mac::Shot, cx: &mut App) {
