@@ -78,7 +78,17 @@ impl SettingsWindow {
             cx.on_release(|_, cx| {
                 crate::reload_hotkeys(cx);
             }),
-            cx.observe_global::<settings::Current>(|_, cx| cx.notify()),
+            // Import replaces settings under the fields that keep their own text.
+            cx.observe_global_in::<settings::Current>(window, |this, window, cx| {
+                let s = settings::get(cx).clone();
+                if this.file_name.read(cx).value() != s.file_name.as_str() {
+                    this.file_name.update(cx, |input, cx| input.set_value(s.file_name, window, cx));
+                }
+                if this.solid.read(cx).value().map(rgb_u32) != Some(s.window_background_color) {
+                    this.solid.update(cx, |picker, cx| picker.set_value(rgb(s.window_background_color), window, cx));
+                }
+                cx.notify();
+            }),
             cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()),
             cx.subscribe(&file_name, |_, input, e: &InputEvent, cx| {
                 if let InputEvent::Change = e {
@@ -88,14 +98,19 @@ impl SettingsWindow {
             }),
             cx.subscribe(&solid, |_, _, e: &ColorPickerEvent, cx| {
                 if let ColorPickerEvent::Change(Some(c)) = e {
-                    let c = c.to_rgb();
-                    let ch = |v: f32| (v.clamp(0., 1.) * 255.).round() as u32;
-                    settings::update(cx, |s| s.window_background_color = ch(c.r) << 16 | ch(c.g) << 8 | ch(c.b));
+                    let c = rgb_u32(*c);
+                    settings::update(cx, |s| s.window_background_color = c);
                 }
             }),
         ];
         Self { focus: cx.focus_handle(), page: 0, search, solid, file_name, _subscriptions: subscriptions }
     }
+}
+
+fn rgb_u32(c: Hsla) -> u32 {
+    let c = c.to_rgb();
+    let ch = |v: f32| (v.clamp(0., 1.) * 255.).round() as u32;
+    ch(c.r) << 16 | ch(c.g) << 8 | ch(c.b)
 }
 
 struct Page {

@@ -421,7 +421,10 @@ pub fn file_stem(template: &str) -> String {
     let format = std::ffi::CString::new(template.replace('\0', "")).unwrap_or_default();
     let n = unsafe { libc::strftime(buf.as_mut_ptr().cast(), buf.len(), format.as_ptr(), &tm) };
     let stem = String::from_utf8_lossy(&buf[..n]).replace(['/', ':'], "-");
-    match stem.trim() {
+    // Room for " 99.jpeg" under the 255-byte name limit; a leading dot would hide the file.
+    let stem = stem.trim().trim_start_matches('.').trim_start();
+    let stem = &stem[..stem.floor_char_boundary(240)];
+    match stem {
         "" if template != crate::settings::FILE_NAME => file_stem(crate::settings::FILE_NAME),
         stem => stem.to_string(),
     }

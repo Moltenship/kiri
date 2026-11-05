@@ -382,7 +382,7 @@ pub fn stitch(shots: Vec<((f32, f32), crate::mac::Shot)>, display: u32) -> Optio
     let (x0, y0) = shots.iter().fold((f32::MAX, f32::MAX), |(x, y), ((ox, oy), _)| (x.min(*ox), y.min(*oy)));
     let (x1, y1) = shots.iter().fold((f32::MIN, f32::MIN), |(x, y), ((ox, oy), s)| (x.max(ox + size(s).0), y.max(oy + size(s).1)));
     let (w, h) = (((x1 - x0) * scale).round() as u32, ((y1 - y0) * scale).round() as u32);
-    let mut bgra = vec![0u8; (w * h * 4) as usize];
+    let mut bgra = vec![0u8; w as usize * h as usize * 4];
     for ((ox, oy), s) in &shots {
         let (dx, dy) = (((ox - x0) * scale).round() as u32, ((oy - y0) * scale).round() as u32);
         let (dw, dh) = ((size(s).0 * scale).round() as u32, (size(s).1 * scale).round() as u32);
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn transparent_edges_have_no_background() {
         let (w, h) = (8u32, 8u32);
-        let mut bgra = vec![0u8; (w * h * 4) as usize];
+        let mut bgra = vec![0u8; w as usize * h as usize * 4];
         let clear = TiledImage::from_bgra(w, h, &bgra, w as usize * 4);
         assert_eq!(background_color(&clear, clear.full()), None);
         bgra.chunks_mut(4).for_each(|p| p.copy_from_slice(&[0x30, 0x20, 0x10, 0xFF]));

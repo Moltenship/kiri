@@ -401,6 +401,8 @@ mod tests {
         assert!(year.len() == 4 && year.starts_with("20"), "{year}");
         assert_eq!(crate::mac::file_stem("a/b:c"), "a-b-c");
         assert!(crate::mac::file_stem("  ").starts_with("Kiri "));
+        assert_eq!(crate::mac::file_stem(".hidden"), "hidden");
+        assert_eq!(crate::mac::file_stem(&"é".repeat(200)).len(), 240);
     }
 
     #[test]

@@ -586,7 +586,11 @@ fn fullscreen(cx: &mut App) {
             mac::capture_display(one).await
         } else {
             let shots = futures::future::join_all(displays.into_iter().map(mac::capture_display)).await;
-            let placed = shots.into_iter().flatten().map(|s| (mac::display_origin(s.display), s)).collect();
+            let Some(shots) = shots.into_iter().collect::<Option<Vec<_>>>() else {
+                cx.update(|cx| toast::show("Couldn't capture every display", cx));
+                return;
+            };
+            let placed = shots.into_iter().map(|s| (mac::display_origin(s.display), s)).collect();
             cx.background_executor().spawn(async move { pixels::stitch(placed, display) }).await
         };
         if let Some(shot) = shot {
