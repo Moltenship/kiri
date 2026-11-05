@@ -2,6 +2,14 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.9] - 2026-11-05
+
+### Changed
+- Updating shows the download percentage, then checking and installing, until Kiri restarts. The menu bar item reads Updating to Kiri while it runs. Updates from this version on show it.
+
+### Fixed
+- Pixelate text covers each line of text and leaves the gaps between lines alone, as in Shottr.
+
 ## [0.1.0-beta.8] - 2026-11-05
 
 ### Added
