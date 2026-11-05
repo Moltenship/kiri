@@ -31,7 +31,7 @@ Each tool has a letter: `V` select and crop, `A` arrow, `T` text, `R` rectangle,
 - Annotations past the image edge grow the canvas. The new area takes the image's background color, or stays transparent around a window capture.
 - Zoom with the scroll wheel, a pinch, `⌘+` and `⌘-`. `⌘1` fits the image, `⌘0` shows it at 100%.
 - With the select tool, drag to select an area: `Enter` crops to it, `A` trims it to its content, and `Q` or `W` zooms in on its corners for a pixel-exact edge.
-- `K` adds a backdrop. `P` switches the units between points and pixels.
+- `K` adds a backdrop. Under Image, Wallpaper puts the screenshot on your current desktop picture. `P` switches the units between points and pixels.
 
 ## Measuring and colors
 

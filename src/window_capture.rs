@@ -14,7 +14,7 @@ use objc2_core_foundation::{
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColor, CGColorSpace, CGContext, CGDataProvider, CGDirectDisplayID,
-    CGDisplayBounds, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo,
+    CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayMode, CGEvent, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo,
     CGRectMakeWithDictionaryRepresentation, CGWindowLevelForKey, CGWindowLevelKey,
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceSRGB, kCGWindowAlpha,
     kCGWindowBounds, kCGWindowLayer, kCGWindowName, kCGWindowNumber, kCGWindowOwnerName,
@@ -213,6 +213,17 @@ async fn capture_image(
         )
     };
     rx.await.ok().flatten()
+}
+
+/// The desktop picture of the display under the pointer, whole and at its pixel size.
+pub async fn desktop_picture() -> Option<Shot> {
+    let display = display_at(CGEvent::location(CGEvent::new(None).as_deref()));
+    let content = shareable_content().await?;
+    let size = CGDisplayBounds(display).size;
+    let scale = CGDisplayMode::pixel_width(CGDisplayCopyDisplayMode(display).as_deref()) as f64 / size.width;
+    let px = ((size.width * scale) as usize, (size.height * scale) as usize);
+    let image = wallpaper(&content, display, CGRect::new(CGPoint::ZERO, size), px).await?;
+    compose(&image, (0, 0, px.0, px.1), None, display, scale as f32)
 }
 
 /// The desktop picture alone (no windows, no icons) under `source`, in display-local points.

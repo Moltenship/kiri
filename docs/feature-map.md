@@ -150,7 +150,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Stays editable until export. Suggest a gradient from the screenshot's colors.
 - Inset adds a margin of the screenshot's own background color; Recenter crops to the content first so the margin is even.
 - A gradient is a palette of four stops plus a kind (mesh, vertical, diagonal, radial) that applies to every palette, as in the alternative. Stops can be edited, reversed, or shuffled. Solid takes any custom color.
-- Image backdrop: any PNG or JPEG, cropped to cover, with a blur scaled to the backdrop so the preview matches the export. No bundled wallpapers.
+- Image backdrop: any PNG or JPEG, cropped to cover, with a blur scaled to the backdrop so the preview matches the export. No bundled wallpapers; Wallpaper takes what the desktop under the pointer shows, so dynamic and live wallpapers work too.
 
 ### 15 Compose and GIF
 - Image objects on the canvas: move, scale, opacity, z-order. The canvas grows the same way it does for annotations.

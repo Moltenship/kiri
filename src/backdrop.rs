@@ -469,6 +469,19 @@ thread_local! {
     static CACHE: RefCell<Option<(Fill, (u32, u32), Arc<RenderImage>)>> = const { RefCell::new(None) };
 }
 
+fn wallpaper_path() -> PathBuf {
+    crate::settings::path().with_file_name("Wallpaper.png")
+}
+
+/// Drops the decoded copies of a file that was rewritten in place.
+fn forget(path: &Path, window: &mut Window) {
+    SOURCES.with_borrow_mut(|sources| sources.retain(|(p, ..)| p != path));
+    let stale = CACHE.with_borrow_mut(|cache| cache.take_if(|(fill, ..)| matches!(fill, Fill::Image(p, _) if p == path)));
+    if let Some((_, _, old)) = stale {
+        let _ = window.drop_image(old);
+    }
+}
+
 /// The fill at low resolution for the screen; gradients scale up smoothly, pictures keep their proportions.
 fn background_image(fill: &Fill, aspect: f32, window: &mut Window) -> Arc<RenderImage> {
     let size = match fill {
@@ -627,19 +640,48 @@ impl Panel {
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(paths))) = rx.await else { return };
             let Some(path) = paths.into_iter().next() else { return };
+            let _ = this.update_in(cx, |this, window, cx| this.set_image(path, window, cx));
+        })
+        .detach();
+    }
+
+    /// Saves what the desktop shows now, so dynamic and live wallpapers work too.
+    fn use_wallpaper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let path = wallpaper_path();
+            let saved = match crate::window_capture::desktop_picture().await {
+                Some(shot) => {
+                    let path = path.clone();
+                    cx.background_spawn(async move {
+                        let png = crate::export::encode_bgra(shot.width, shot.height, shot.bgra, 1.);
+                        !png.is_empty() && std::fs::write(&path, png).is_ok()
+                    })
+                    .await
+                }
+                None => false,
+            };
             let _ = this.update_in(cx, |this, window, cx| {
-                if source(&path, 1024).is_none() {
-                    crate::toast::show("Couldn't open that image", cx);
+                if !saved {
+                    crate::toast::show("Couldn't capture the wallpaper", cx);
                     return;
                 }
-                let blur = match this.editor.upgrade().and_then(|e| e.read(cx).backdrop.clone()).map(|b| b.fill) {
-                    Some(Fill::Image(_, blur)) => blur,
-                    _ => 0.,
-                };
-                this.edit(window, cx, |b| b.fill = Fill::Image(path, blur));
+                forget(&path, window);
+                this.set_image(path, window, cx);
             });
         })
         .detach();
+    }
+
+    fn set_image(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if source(&path, 1024).is_none() {
+            crate::toast::show("Couldn't open that image", cx);
+            return;
+        }
+        let blur = match self.editor.upgrade().and_then(|e| e.read(cx).backdrop.clone()).map(|b| b.fill) {
+            Some(Fill::Image(_, blur)) => blur,
+            _ => 0.,
+        };
+        self.edit(window, cx, |b| b.fill = Fill::Image(path, blur));
     }
 
     fn edit(&mut self, window: &mut Window, cx: &mut Context<Self>, f: impl FnOnce(&mut Backdrop)) {
@@ -777,11 +819,21 @@ impl Render for Panel {
             Fill::Image(path, _) => Some(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             _ => None,
         };
+        let wallpaper = matches!(&b.fill, Fill::Image(path, _) if *path == wallpaper_path());
+        let name = picture.clone().filter(|_| !wallpaper);
         let image_header = h_flex()
             .gap_2()
             .child(section("Image"))
-            .children(picture.clone().map(|name| div().flex_1().min_w_0().truncate().text_xs().text_color(muted).child(name)))
-            .when(picture.is_none(), |row| row.child(div().flex_1()))
+            .children(name.clone().map(|name| div().flex_1().min_w_0().truncate().text_xs().text_color(muted).child(name)))
+            .when(name.is_none(), |row| row.child(div().flex_1()))
+            .child(
+                Button::new("wallpaper")
+                    .label("Wallpaper")
+                    .xsmall()
+                    .ghost()
+                    .selected(wallpaper)
+                    .on_click(cx.listener(|this, _, window, cx| this.use_wallpaper(window, cx))),
+            )
             .child(
                 Button::new("choose-image")
                     .label("Choose…")
