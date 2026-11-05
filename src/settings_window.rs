@@ -37,7 +37,17 @@ pub fn refresh_system_shortcuts(cx: &mut App) {
 pub fn system_conflict(keys: &str, cx: &App) -> Option<String> {
     let all = &cx.try_global::<SystemShortcuts>()?.0;
     let taken = crate::mac::system_shortcut(all, keys)?;
-    Some(format!("Turn off {} in Keyboard Shortcuts › {}", pretty(keys), taken.section))
+    Some(match cfg!(windows) {
+        true => windows_conflict(keys, taken),
+        false => format!("Turn off {} in Keyboard Shortcuts › {}", pretty(keys), taken.section),
+    })
+}
+
+fn windows_conflict(keys: &str, taken: &crate::mac::SystemShortcut) -> String {
+    match taken.section.as_str() {
+        "" => format!("Windows uses {} for {}, so Kiri may not get it.", pretty(keys), taken.name),
+        section => format!("Windows uses {} for {}. Turn it off in Settings › {section}.", pretty(keys), taken.name),
+    }
 }
 
 pub struct Open(pub AnyWindowHandle);
@@ -195,14 +205,15 @@ struct Row {
     alert: bool,
     control: AnyElement,
     disabled: bool,
+    hidden: bool,
 }
 
 fn group(title: impl Into<Option<&'static str>>, rows: impl IntoIterator<Item = Row>) -> Group {
-    Group { title: title.into(), description: None, rows: rows.into_iter().collect() }
+    Group { title: title.into(), description: None, rows: rows.into_iter().filter(|r| !r.hidden).collect() }
 }
 
 fn row(title: impl Into<SharedString>, control: impl IntoElement) -> Row {
-    Row { title: title.into(), description: None, alert: false, control: control.into_any_element(), disabled: false }
+    Row { title: title.into(), description: None, alert: false, control: control.into_any_element(), disabled: false, hidden: false }
 }
 
 impl Row {
@@ -219,6 +230,12 @@ impl Row {
 
     fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// For settings that do nothing on Windows.
+    fn mac_only(mut self) -> Self {
+        self.hidden = cfg!(windows);
         self
     }
 }
@@ -339,7 +356,11 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                     row("Launch at login", login),
                     row("Appearance", appearance_picker(64., cx)),
                     row("Check for updates automatically", toggle("updates", |s| s.auto_update, |s, v| s.auto_update = v, cx))
-                        .description(format!("Checks GitHub once a day. A red dot on the menu bar icon means a new version is out. This is {}.", env!("CARGO_PKG_VERSION"))),
+                        .description(format!(
+                            "Checks GitHub once a day. A red dot on the {} icon means a new version is out. This is {}.",
+                            crate::platform_text("menu bar", "tray"),
+                            env!("CARGO_PKG_VERSION")
+                        )),
                 ],
             ),
             group(
@@ -352,7 +373,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                         .description("The thumbnail is a small card with Copy, Save, Edit, and Pin."),
                     row("Hide thumbnail", choice("hide", HIDE_AFTER, |s| s.thumbnail_seconds, |s, v| s.thumbnail_seconds = v, cx))
                         .disabled(now.area_preview != Preview::Thumbnail),
-                    row("⌘Q in Kiri's windows", choice("cmd-q", CMD_Q, |s| s.cmd_q, |s, v| s.cmd_q = v, cx)),
+                    row("⌘Q in Kiri's windows", choice("cmd-q", CMD_Q, |s| s.cmd_q, |s, v| s.cmd_q = v, cx)).mac_only(),
                     row("Confirm saving", toggle("confirm", |s| s.confirmations, |s, v| s.confirmations = v, cx))
                         .description("A short toast with the folder after saving. Errors always show."),
                 ],
@@ -367,7 +388,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                     )),
                     row("Save format", choice("format", SAVE_FORMATS, |s| s.save_auto_jpeg, |s, v| s.save_auto_jpeg = v, cx))
                         .description("Auto saves a JPEG when it is smaller, which suits photos. Transparent images stay PNG."),
-                    row("Downscale Retina screenshots", toggle("downscale", |s| s.downscale_retina, |s, v| s.downscale_retina = v, cx))
+                    row(crate::platform_text("Downscale Retina screenshots", "Downscale high-DPI screenshots"), toggle("downscale", |s| s.downscale_retina, |s, v| s.downscale_retina = v, cx))
                         .description("Copy and save at one pixel per point."),
                 ],
             ),
@@ -384,12 +405,14 @@ fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, sp
             group(
                 "Area",
                 [
-                    row("Selection", choice("selection", SELECTIONS, |s| s.area_selection, |s, v| s.area_selection = v, cx)).description(
-                        "macOS selects the same way as ⇧⌘4. Kiri adds arrow keys that move the pointer one point at a time, remembers the area for Repeat Area Capture, and has the options below.",
-                    ),
+                    row("Selection", choice("selection", SELECTIONS, |s| s.area_selection, |s, v| s.area_selection = v, cx))
+                        .description(
+                            "macOS selects the same way as ⇧⌘4. Kiri adds arrow keys that move the pointer one point at a time, remembers the area for Repeat Area Capture, and has the options below.",
+                        )
+                        .mac_only(),
                     row("Freeze the screen while selecting", toggle("freeze", |s| s.freeze_screen, |s, v| s.freeze_screen = v, cx))
                         .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")
-                        .disabled(now.area_selection != AreaSelection::Kiri),
+                        .disabled(!cfg!(windows) && now.area_selection != AreaSelection::Kiri),
                 ],
             ),
             group(
@@ -430,9 +453,12 @@ fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, sp
                     .description("Faster scrolls further between frames. Slow down for pages that load as you scroll.")
                     .disabled(now.scroll_manual),
                     row("Scroll by hand", toggle("manual", |s| s.scroll_manual, |s, v| s.scroll_manual = v, cx))
-                        .description("Kiri stitches while you scroll, for apps that ignore automatic scrolling. Doesn't need Accessibility."),
+                        .description(crate::platform_text(
+                            "Kiri stitches while you scroll, for apps that ignore automatic scrolling. Doesn't need Accessibility.",
+                            "Kiri stitches while you scroll, for apps that ignore automatic scrolling.",
+                        )),
                     row("Reverse scroll direction", toggle("reverse", |s| s.scroll_reverse, |s, v| s.scroll_reverse = v, cx))
-                        .description("For apps like Mos or Scroll Reverser that invert the wheel."),
+                        .description(crate::platform_text("For apps like Mos or Scroll Reverser that invert the wheel.", "For tools that invert the mouse wheel.")),
                 ],
             ),
         ],
@@ -472,17 +498,20 @@ fn editor(cx: &App) -> Page {
 }
 
 fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
+    let screen = crate::platform_text("shift+cmd+3", "shift+printscreen");
+    let area = crate::platform_text("shift+cmd+4", "printscreen");
     let system = h_flex()
         .gap_2()
-        .child(button("keyboard", "Open Keyboard Shortcuts", |cx| cx.open_url(KEYBOARD_SETTINGS)))
-        .child(button("system-keys", "Use ⇧⌘3 and ⇧⌘4", |cx| {
+        .child(button("keyboard", crate::platform_text("Open Keyboard Shortcuts", "Open Keyboard Settings"), |cx| cx.open_url(KEYBOARD_SETTINGS)))
+        .child(button("system-keys", crate::platform_text("Use ⇧⌘3 and ⇧⌘4", "Use Print Screen"), move |cx| {
             if let Err(err) = crate::mac::release_screenshot_keys() {
-                crate::toast::show(format!("Couldn't turn off the macOS shortcuts: {err}"), cx);
+                let whose = crate::platform_text("the macOS shortcuts", "Snipping Tool on Print Screen");
+                crate::toast::show(format!("Couldn't turn off {whose}: {err}"), cx);
             }
             refresh_system_shortcuts(cx);
             settings::update(cx, |s| {
-                s.hotkeys.insert(Capture::Fullscreen, Some("shift+cmd+3".into()));
-                s.hotkeys.insert(Capture::Area, Some("shift+cmd+4".into()));
+                s.hotkeys.insert(Capture::Fullscreen, Some(screen.into()));
+                s.hotkeys.insert(Capture::Area, Some(area.into()));
             });
             for keys in crate::reload_hotkeys(cx) {
                 crate::toast::show(format!("{} is taken by another app", pretty(&keys)), cx);
@@ -497,6 +526,22 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
             let recorder = recorder(capture, window, cx);
             match taken {
                 None => row(capture.label(), recorder),
+                Some((taken, keys)) if cfg!(windows) => row(
+                    capture.label(),
+                    h_flex()
+                        .gap_2()
+                        .when(!taken.section.is_empty(), |d| {
+                            d.child(
+                                Button::new(("open-keyboard", capture as usize))
+                                    .label("Open Settings")
+                                    .outline()
+                                    .small()
+                                    .on_click(|_, _, cx| cx.open_url(KEYBOARD_SETTINGS)),
+                            )
+                        })
+                        .child(recorder),
+                )
+                .alert(windows_conflict(&keys, &taken)),
                 Some((taken, keys)) => row(
                     capture.label(),
                     h_flex()
@@ -521,7 +566,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
         .collect::<Vec<_>>();
     Page {
         title: "Hotkeys",
-        icon: IconName::Command,
+        icon: if cfg!(windows) { IconName::Keyboard } else { IconName::Command },
         groups: vec![
             Group {
                 description: Some("Click a shortcut, then press the new keys. Backspace clears it, Esc cancels."),
@@ -529,14 +574,17 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
             },
             group(
                 "System shortcuts",
-                [row("Screenshots in macOS", system)
-                    .description("Use ⇧⌘3 and ⇧⌘4 turns those off in macOS and gives them to Capture Screen and Capture Area.")],
+                [row(crate::platform_text("Screenshots in macOS", "Print Screen"), system).description(crate::platform_text(
+                    "Use ⇧⌘3 and ⇧⌘4 turns those off in macOS and gives them to Capture Screen and Capture Area.",
+                    "Use Print Screen stops it opening Snipping Tool and gives it to Capture Area, and Shift+PrtScn to Capture Screen.",
+                ))],
             ),
         ],
     }
 }
 
-pub const KEYBOARD_SETTINGS: &str = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts";
+pub const KEYBOARD_SETTINGS: &str =
+    crate::platform_text("x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts", "ms-settings:easeofaccess-keyboard");
 
 struct Recording(Option<Capture>);
 
@@ -616,7 +664,7 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
                         None => key,
                     };
                     let mut parts = Vec::new();
-                    for (on, name) in [(m.control, "ctrl"), (m.alt, "alt"), (m.shift, "shift"), (m.platform, "cmd")] {
+                    for (on, name) in [(m.control, "ctrl"), (m.alt, "alt"), (m.shift, "shift"), (m.platform, crate::platform_text("cmd", "super"))] {
                         if on {
                             parts.push(name);
                         }
@@ -652,6 +700,9 @@ fn unshift(key: &str) -> Option<&'static str> {
 }
 
 pub fn pretty(keys: &str) -> String {
+    if cfg!(windows) {
+        return pretty_windows(keys);
+    }
     keys.split('+')
         .map(|part| match part {
             "ctrl" => "⌃".to_string(),
@@ -662,6 +713,28 @@ pub fn pretty(keys: &str) -> String {
             key => key.to_uppercase(),
         })
         .collect()
+}
+
+/// As Windows writes shortcuts: "Win+Ctrl+Shift+2", "PrtScn".
+fn pretty_windows(keys: &str) -> String {
+    const MODIFIERS: [(&[&str], &str); 4] =
+        [(&["super", "cmd", "win", "meta"], "Win"), (&["ctrl", "control"], "Ctrl"), (&["alt", "option"], "Alt"), (&["shift"], "Shift")];
+    let parts: Vec<String> = keys.split('+').map(|p| p.to_ascii_lowercase()).collect();
+    let modifier = |p: &str| MODIFIERS.iter().any(|(names, _)| names.contains(&p));
+    let key = parts.iter().find(|p| !modifier(p)).map(|key| match key.as_str() {
+        "printscreen" => "PrtScn".to_string(),
+        "escape" => "Esc".to_string(),
+        "pageup" => "Page Up".to_string(),
+        "pagedown" => "Page Down".to_string(),
+        k => k[..1].to_uppercase() + &k[1..],
+    });
+    MODIFIERS
+        .iter()
+        .filter(|(names, _)| parts.iter().any(|p| names.contains(&p.as_str())))
+        .map(|(_, name)| name.to_string())
+        .chain(key)
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 fn advanced(cx: &App) -> Page {
@@ -678,7 +751,7 @@ fn advanced(cx: &App) -> Page {
     );
     let file = h_flex()
         .gap_2()
-        .child(button("reveal", "Show in Finder", |cx| {
+        .child(button("reveal", crate::platform_text("Show in Finder", "Show in Explorer"), |cx| {
             let path = settings::path();
             if !path.exists() {
                 settings::update(cx, |_| {});
@@ -732,7 +805,10 @@ fn advanced(cx: &App) -> Page {
                     "Allow kiri --capture",
                     toggle("automation", |s| s.automation, |s, v| s.automation = v, cx),
                 )
-                .description("Lets scripts, Shortcuts, and launchers run captures, as in kiri --capture area.")],
+                .description(crate::platform_text(
+                    "Lets scripts, Shortcuts, and launchers run captures, as in kiri --capture area.",
+                    "Lets scripts and launchers run captures, as in kiri --capture area.",
+                ))],
             ),
             group("Settings file", [row("Your settings as JSON", file)]),
         ],
@@ -1089,4 +1165,15 @@ fn wireframe(dark: bool, w: f32, h: f32) -> impl IntoElement {
                 .child(bar(20., line))
                 .child(v_flex().rounded(px(2.5 * u)).bg(group).children(rows)),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn windows_names_keys_as_windows_does() {
+        assert_eq!(super::pretty_windows("shift+ctrl+2"), "Ctrl+Shift+2");
+        assert_eq!(super::pretty_windows("super+alt+o"), "Win+Alt+O");
+        assert_eq!(super::pretty_windows("shift+printscreen"), "Shift+PrtScn");
+        assert_eq!(super::pretty_windows("ctrl+f5"), "Ctrl+F5");
+    }
 }

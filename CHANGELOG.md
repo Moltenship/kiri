@@ -8,10 +8,13 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 - Windows: capture a window or the active window, even when it's covered.
 - Windows: Capture Text, Recognize Text, and Blur Text read text with Windows' own text recognition, in the languages installed in Windows.
 - Windows: Launch at Login.
+- Windows: Settings warns when a hotkey is one of Windows' own, and Use Print Screen gives PrtScn to Capture Area in place of Snipping Tool.
 
 ### Changed
 - Windows: the editor and Settings have minimize, maximize, and close buttons, and drag by their title area. Pins drag too.
 - Windows: in text annotations, Ctrl moves and deletes by word, and Home and End go to the start and end of the line.
+- Windows: keys read as Windows writes them (Ctrl+Shift+2, Win, PrtScn) everywhere, Capture Text defaults to Ctrl+Shift+3, Ctrl+Y redoes, and Ctrl+Shift+W closes all editors.
+- Windows: Settings hides the macOS-only Selection and ⌘Q rows, and Freeze the screen is always available.
 
 ## [0.1.0] - 2026-11-05
 

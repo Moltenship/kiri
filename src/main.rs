@@ -75,6 +75,7 @@ gpui_kit::assets::icon_assets!(
         Hand,
         Highlighter,
         Image,
+        Keyboard,
         Maximize2,
         Minimize2,
         MoveUpRight,
@@ -184,6 +185,11 @@ pub fn keys(keys: &'static str) -> &'static str {
         true => Box::leak(keys.replace("cmd", "ctrl").into_boxed_str()),
         false => keys,
     }
+}
+
+/// `mac` on macOS and `windows` on Windows, for text that names keys or parts of the system.
+pub const fn platform_text(mac: &'static str, windows: &'static str) -> &'static str {
+    if cfg!(windows) { windows } else { mac }
 }
 
 /// A focused overlay can still miss `Esc` while AppKit finishes closing the
@@ -401,23 +407,15 @@ fn tray_menu(s: &settings::Settings, available: Option<&str>, installing: bool) 
         Some(version) => IconMenuItem::with_id("update", format!("Update to Kiri {version}…"), true, Some(red_dot()), None),
         None => IconMenuItem::with_id("update", "Check for Updates…", true, None, None),
     };
-    let item = |c: Capture| {
-        let accel = s.hotkey(c).and_then(|k| k.parse().ok());
-        MenuItem::with_id(format!("{c:?}"), c.label(), true, accel)
+    // Windows menus show the keys after a tab, written here as Settings writes them.
+    let labeled = |c: Capture, label: String| match s.hotkey(c) {
+        Some(keys) if cfg!(windows) => MenuItem::with_id(format!("{c:?}"), format!("{label}	{}", settings_window::pretty(&keys)), true, None),
+        keys => MenuItem::with_id(format!("{c:?}"), label, true, keys.and_then(|k| k.parse().ok())),
     };
+    let item = |c: Capture| labeled(c, c.label().to_string());
     let more = Submenu::new("More", true);
-    let delayed = MenuItem::with_id(
-        format!("{:?}", Capture::Delayed),
-        format!("Delayed Screenshot ({}s)", s.delay_seconds),
-        true,
-        s.hotkey(Capture::Delayed).and_then(|k| k.parse().ok()),
-    );
-    let delayed_area = MenuItem::with_id(
-        format!("{:?}", Capture::DelayedArea),
-        format!("Delayed Area Capture ({}s)", s.delay_seconds),
-        true,
-        s.hotkey(Capture::DelayedArea).and_then(|k| k.parse().ok()),
-    );
+    let delayed = labeled(Capture::Delayed, format!("Delayed Screenshot ({}s)", s.delay_seconds));
+    let delayed_area = labeled(Capture::DelayedArea, format!("Delayed Area Capture ({}s)", s.delay_seconds));
     let _ = more.append_items(&[
         &delayed,
         &delayed_area,

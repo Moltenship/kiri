@@ -66,31 +66,8 @@ pub fn ensure_screen_access() -> bool {
 
 pub fn set_appearance(_dark: Option<bool>) {}
 
-pub struct SystemKeysOff;
-
-impl SystemKeysOff {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-pub fn release_screenshot_keys() -> std::io::Result<()> {
-    Err(std::io::Error::other(NOT_YET))
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct SystemShortcut {
-    pub name: String,
-    pub section: String,
-}
-
-pub fn system_shortcuts() -> Vec<SystemShortcut> {
-    Vec::new()
-}
-
-pub fn system_shortcut<'a>(_all: &'a [SystemShortcut], _keys: &str) -> Option<&'a SystemShortcut> {
-    None
-}
+mod keys;
+pub use keys::{SystemKeysOff, SystemShortcut, release_screenshot_keys, system_shortcut, system_shortcuts};
 
 pub async fn capture_display(display: u32) -> Option<Shot> {
     let (rect, scale) = monitor_rect(display)?;
@@ -299,6 +276,7 @@ pub fn start_window_move(window: &Window) {
 /// their clicks and snap layouts from the areas they mark, as it does for its own.
 pub fn caption_buttons(window: &Window, cx: &gpui_kit::App) -> impl gpui_kit::IntoElement {
     use gpui_kit::component::ActiveTheme;
+    use gpui_kit::prelude::FluentBuilder;
     use gpui_kit::*;
     let (fg, hover) = (cx.theme().foreground, cx.theme().secondary_hover);
     let button = |area: WindowControlArea, glyph: &'static str| {
@@ -318,6 +296,8 @@ pub fn caption_buttons(window: &Window, cx: &gpui_kit::App) -> impl gpui_kit::In
             .child(glyph)
     };
     let max = if window.is_maximized() { "\u{E923}" } else { "\u{E922}" };
+    let style = hwnd(window).map_or(0, |h| unsafe { GetWindowLongW(h, GWL_STYLE) } as u32);
+    let has = |flag: WINDOW_STYLE| style & flag.0 != 0;
     // Occluding keeps a drag area underneath from claiming the buttons' clicks.
     div()
         .id("caption-buttons")
@@ -325,8 +305,8 @@ pub fn caption_buttons(window: &Window, cx: &gpui_kit::App) -> impl gpui_kit::In
         .flex()
         .flex_none()
         .h_full()
-        .child(button(WindowControlArea::Min, "\u{E921}"))
-        .child(button(WindowControlArea::Max, max))
+        .when(has(WS_MINIMIZEBOX), |d| d.child(button(WindowControlArea::Min, "\u{E921}")))
+        .when(has(WS_MAXIMIZEBOX), |d| d.child(button(WindowControlArea::Max, max)))
         .child(button(WindowControlArea::Close, "\u{E8BB}"))
 }
 

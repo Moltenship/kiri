@@ -75,11 +75,13 @@ impl Capture {
     }
 
     fn default_hotkey(self) -> Option<&'static str> {
-        // The Windows key with Shift and a digit belongs to the taskbar.
+        // The Windows key with Shift and a digit belongs to the taskbar, Print Screen and
+        // Windows+Shift+S to Snipping Tool, and Ctrl+Alt is AltGr on many keyboards.
         if cfg!(windows) {
             return match self {
                 Capture::Area => Some("ctrl+shift+2"),
                 Capture::Fullscreen => Some("ctrl+shift+1"),
+                Capture::Text => Some("ctrl+shift+3"),
                 _ => None,
             };
         }

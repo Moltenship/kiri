@@ -167,11 +167,14 @@ pub fn bind_keys(cx: &mut App) {
     });
     cx.bind_keys([
         KeyBinding::new(crate::keys("cmd-,"), OpenSettings, None),
-        KeyBinding::new(crate::keys("cmd-q"), Quit, None),
         KeyBinding::new(crate::keys("shift-cmd-o"), OpenFile, None),
         KeyBinding::new(crate::keys("shift-cmd-v"), OpenClipboard, None),
-        KeyBinding::new(crate::keys("alt-cmd-w"), CloseAll, None),
+        KeyBinding::new(crate::platform_text("alt-cmd-w", "ctrl-shift-w"), CloseAll, None),
     ]);
+    // Windows quits from the tray; Alt+F4 closes the window.
+    if !cfg!(windows) {
+        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+    }
     let base = Some("Editor");
     let idle = Some("Editor && !text");
     let tools = Some("Editor && !text && !selection");
@@ -215,6 +218,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("p", ToggleUnit, idle),
         KeyBinding::new("k", ToggleBackdrop, tools),
     ];
+    if cfg!(windows) {
+        keys.push(KeyBinding::new("ctrl-y", Redo, base));
+    }
     macro_rules! tool_keys {
         ($($tool:ident => $action:ident),*) => {
             $(keys.push(KeyBinding::new(Tool::$tool.key(), $action, tools));)*
@@ -2931,7 +2937,10 @@ impl Editor {
                                             .pt_1()
                                             .text_xs()
                                             .text_color(muted)
-                                            .child("Tab copies the pixel color, ⇧Tab the text color nearby, C the average of a selection."),
+                                            .child(crate::platform_text(
+                                                "Tab copies the pixel color, ⇧Tab the text color nearby, C the average of a selection.",
+                                                "Tab copies the pixel color, Shift+Tab the text color nearby, C the average of a selection.",
+                                            )),
                                     )
                             }),
                     )
@@ -3354,7 +3363,7 @@ impl Editor {
                         .child(text)
                         .when_some(action, |d, action| {
                             let label = match action {
-                                ToastAction::Reveal(_) => "Show in Finder",
+                                ToastAction::Reveal(_) => crate::platform_text("Show in Finder", "Show in Explorer"),
                                 ToastAction::Renumber => "Renumber",
                             };
                             d.cursor_pointer()
@@ -3566,7 +3575,7 @@ fn size_popover(editor: &Entity<Editor>, cx: &mut Context<PopoverState>) -> AnyE
                     move |_, _, cx| editor.update(cx, |this, cx| this.toggle_unit(cx))
                 })),
         )
-        .child(div().text_xs().text_color(muted).child("A point is two pixels on a Retina display. P switches."))
+        .child(div().text_xs().text_color(muted).child(crate::platform_text("A point is two pixels on a Retina display. P switches.", "A point is one pixel at 100% scale. P switches.")))
         .child(div().h(px(1.)).my_1().bg(border))
         .child(
             h_flex()

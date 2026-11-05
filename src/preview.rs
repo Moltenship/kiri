@@ -243,19 +243,19 @@ impl Render for Preview {
                     .child(
                         h_flex()
                             .gap(px(2.))
-                            .child(action("copy", IconName::Copy, "Copy (⌘C)").on_click(
+                            .child(action("copy", IconName::Copy, crate::platform_text("Copy (⌘C)", "Copy (Ctrl+C)")).on_click(
                                 cx.listener(|this, _, w, cx| this.copy_and_close(w, cx)),
                             ))
-                            .child(action("save", IconName::Download, "Save (⌘S)").on_click(
+                            .child(action("save", IconName::Download, crate::platform_text("Save (⌘S)", "Save (Ctrl+S)")).on_click(
                                 cx.listener(|this, _, w, cx| this.save(w, cx)),
                             ))
-                            .child(action("edit", IconName::Pencil, "Edit (↩)").on_click(
+                            .child(action("edit", IconName::Pencil, crate::platform_text("Edit (↩)", "Edit (Enter)")).on_click(
                                 cx.listener(|this, _, w, cx| this.edit(w, cx)),
                             ))
-                            .child(action("ocr", IconName::ScanText, "Recognize text (⌘O)").on_click(
+                            .child(action("ocr", IconName::ScanText, crate::platform_text("Recognize text (⌘O)", "Recognize text (Ctrl+O)")).on_click(
                                 cx.listener(|this, _, w, cx| this.recognize(w, cx)),
                             ))
-                            .child(action("pin", IconName::Pin, "Pin (⌘P)").on_click(
+                            .child(action("pin", IconName::Pin, crate::platform_text("Pin (⌘P)", "Pin (Ctrl+P)")).on_click(
                                 cx.listener(|this, _, w, cx| this.pin(w, cx)),
                             )),
                     )

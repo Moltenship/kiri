@@ -222,7 +222,7 @@ impl Pin {
             &zooms[2],
             &PredefinedMenuItem::separator(),
             &CheckMenuItem::with_id(id("translucent"), "Semi-transparent", true, self.translucent, None),
-            &CheckMenuItem::with_id(id("through"), "Click-through (hold ⌥ to reach it)", true, self.click_through, None),
+            &CheckMenuItem::with_id(id("through"), crate::platform_text("Click-through (hold ⌥ to reach it)", "Click-through (hold Alt to reach it)"), true, self.click_through, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(id("close"), "Close", true, None),
         ]);
