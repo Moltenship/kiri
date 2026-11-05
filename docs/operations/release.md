@@ -1,6 +1,6 @@
 # Releasing Kiri for macOS
 
-`scripts/release.sh` builds `dist/Kiri.app`, signs it with the Developer ID, notarizes and staples it, and packs it in `dist/Kiri.dmg`, which is notarized too. With `--publish` it also creates the GitHub release `v<version>` at HEAD with the DMG, and that version's CHANGELOG section as the notes. Versions with a suffix such as `-beta.2` are marked as pre-releases.
+`scripts/release.sh` builds `dist/Kiri.app`, signs it with the Developer ID, notarizes and staples it, and packs it in `dist/Kiri.dmg`, which is notarized too. With `--publish` it also creates the GitHub release `v<version>` at HEAD with the DMG, and that version's CHANGELOG section as the notes. Every release, a beta included, is a full release marked Latest: the site's Download button links to `releases/latest/download/Kiri.dmg`, which skips pre-releases.
 
 ## Once per machine
 

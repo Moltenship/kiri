@@ -1,11 +1,13 @@
 ---
 import '../styles/site.css'
 import Playground from '../demos/Playground'
+import Logo from './Logo.astro'
 import FeatureDemo from '../features/FeatureDemo'
 import { FEATURES } from '../features/copy'
 
 const GITHUB = 'https://github.com/Moltenship/kiri'
 const RELEASES = `${GITHUB}/releases`
+const DMG = `${RELEASES}/latest/download/Kiri.dmg`
 const F = FEATURES
 const TITLE = 'Kiri: free, open-source screenshot tool for Mac'
 const DESCRIPTION = 'Capture, mark up and paste in seconds. Scrolling capture, text recognition, blur, measuring and pinning. A free, open-source Shottr alternative for macOS.'
@@ -16,7 +18,7 @@ const APP = {
   name: 'Kiri',
   description: DESCRIPTION,
   url: Astro.site!.href,
-  downloadUrl: RELEASES,
+  downloadUrl: DMG,
   applicationCategory: 'UtilitiesApplication',
   operatingSystem: 'macOS 15.2 or later',
   license: 'https://opensource.org/licenses/MIT',
@@ -53,9 +55,9 @@ const APP = {
       <a class="brand" href="/"><img src="/icon.png" width="28" height="28" alt="" />Kiri</a>
       <nav>
         <a href="#features">Features</a>
-        <a href={GITHUB}>GitHub</a>
+        <a class="nav-gh" href={GITHUB}><Logo name="github" size={15} />GitHub<span class="stars" data-stars hidden></span></a>
       </nav>
-      <a class="btn btn--small" href={RELEASES}>Download</a>
+      <a class="btn btn--small" href={DMG}><Logo name="apple" size={14} />Download</a>
     </header>
 
     <main>
@@ -67,13 +69,13 @@ const APP = {
           Click the editor below to take over.
         </p>
         <div class="ctas">
-          <a class="btn" href={RELEASES}>Download for macOS</a>
-          <a class="btn btn--ghost" href={GITHUB}>Star on GitHub</a>
+          <a class="btn" href={DMG}><Logo name="apple" />Download for macOS</a>
+          <a class="btn btn--ghost" href={GITHUB}><Logo name="github" />Star on GitHub<span class="stars" data-stars hidden></span></a>
         </div>
         <p class="platforms-line">
-          macOS 15.2+ on Apple Silicon
-          <span class="soon">Windows · coming soon</span>
-          <span class="soon">Linux · coming soon</span>
+          <span class="platform"><Logo name="apple" size={13} />macOS 15.2+ on Apple Silicon</span>
+          <span class="soon"><Logo name="windows" size={12} />Windows · coming soon</span>
+          <span class="soon"><Logo name="linux" size={13} />Linux · coming soon</span>
         </p>
       </section>
 
@@ -125,13 +127,13 @@ const APP = {
         <h2>Get Kiri</h2>
         <p class="get-lede">Free and open source. No account to make.</p>
         <div class="ctas">
-          <a class="btn" href={RELEASES}>Download for macOS</a>
-          <a class="btn btn--ghost" href={GITHUB}>Star on GitHub</a>
+          <a class="btn" href={DMG}><Logo name="apple" />Download for macOS</a>
+          <a class="btn btn--ghost" href={GITHUB}><Logo name="github" />Star on GitHub<span class="stars" data-stars hidden></span></a>
         </div>
         <ul class="os">
-          <li data-ready><span class="os-dot"></span><b>macOS</b><span>15.2+ on Apple Silicon</span></li>
-          <li><span class="os-dot"></span><b>Windows</b><span>Coming soon</span></li>
-          <li><span class="os-dot"></span><b>Linux</b><span>Coming soon</span></li>
+          <li data-ready><Logo name="apple" /><b>macOS</b><span>15.2+ on Apple Silicon</span></li>
+          <li><Logo name="windows" /><b>Windows</b><span>Coming soon</span></li>
+          <li><Logo name="linux" /><b>Linux</b><span>Coming soon</span></li>
         </ul>
         <p class="watch"><a href={RELEASES}>Watch releases on GitHub</a> to hear when Windows and Linux land.</p>
       </section>
@@ -162,6 +164,19 @@ const APP = {
         }),
       )
       show()
+
+      const api = 'https://api.github.com/repos/Moltenship/kiri'
+      fetch(api)
+        .then((r) => r.json())
+        .then(({ stargazers_count: n }: { stargazers_count?: number }) => {
+          if (typeof n !== 'number') return
+          const text = n < 1000 ? String(n) : `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`
+          document.querySelectorAll<HTMLElement>('[data-stars]').forEach((s) => {
+            s.textContent = text
+            s.hidden = false
+          })
+        })
+        .catch(() => {})
     </script>
   </body>
 </html>
