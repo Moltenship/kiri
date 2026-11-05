@@ -2,6 +2,15 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.0-beta.11] - 2026-11-05
+
+### Added
+- A Speed slider for scrolling capture, in Settings → Capture. Faster scrolls further between frames.
+
+### Changed
+- Window background and Show in are picked from small pictures, as Appearance is.
+- Max height for scrolling capture is a number you type.
+
 ## [0.1.0-beta.10] - 2026-11-05
 
 ### Changed
