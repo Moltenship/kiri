@@ -25,6 +25,7 @@ mod window_capture;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -521,7 +522,7 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
                 Capture::Text => overlay::Mode::Text,
                 Capture::Scrolling => overlay::Mode::Scroll { up: false },
                 Capture::ScrollingUp => overlay::Mode::Scroll { up: true },
-                _ => overlay::Mode::Area,
+                _ => return select_area(at, cx),
             };
             start_overlay(mode, at, None, cx);
         }
@@ -541,7 +542,7 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
             }
             None => {
                 toast::show("No area to repeat yet. Select one now", cx);
-                start_overlay(overlay::Mode::Area, at, None, cx);
+                select_area(at, cx);
             }
         },
         Capture::Fullscreen => fullscreen(cx),
@@ -557,7 +558,7 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
                 cx.background_executor().timer(Duration::from_millis(120)).await;
                 match capture {
                     Capture::Delayed => cx.update(fullscreen),
-                    _ => cx.update(|cx| start_overlay(overlay::Mode::Area, Instant::now(), None, cx)),
+                    _ => cx.update(|cx| select_area(Instant::now(), cx)),
                 }
             })
             .detach();
@@ -583,6 +584,35 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
 pub fn window_style(cx: &App) -> (settings::WindowBackground, u32) {
     let s = settings::get(cx);
     (s.window_background, s.window_background_color)
+}
+
+/// The system's own area selection, as the alternative uses, unless the screen has to freeze.
+fn select_area(at: Instant, cx: &mut App) {
+    if settings::get(cx).freeze_screen {
+        return start_overlay(overlay::Mode::Area, at, None, cx);
+    }
+    static SELECTING: AtomicBool = AtomicBool::new(false);
+    if SELECTING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let path = std::env::temp_dir().join(format!("kiri-area-{}.png", std::process::id()));
+    cx.spawn(async move |cx| {
+        let shot = cx
+            .background_executor()
+            .spawn(async move {
+                let _ = std::process::Command::new("/usr/sbin/screencapture").arg("-xi").arg(&path).status();
+                // No file means the selection was cancelled.
+                let bytes = std::fs::read(&path).ok();
+                let _ = std::fs::remove_file(&path);
+                bytes.and_then(|b| export::decode(&b))
+            })
+            .await;
+        SELECTING.store(false, Ordering::SeqCst);
+        if let Some((image, scale)) = shot {
+            cx.update(|cx| deliver(image, scale, Some(mac::display_under_cursor()), cx));
+        }
+    })
+    .detach();
 }
 
 fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {

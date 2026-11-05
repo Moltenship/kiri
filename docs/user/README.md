@@ -6,12 +6,13 @@ The first launch walks through Screen Recording access, the capture shortcuts, a
 
 ## Capturing
 
-- **Capture Area** (⇧⌘2): drag a rectangle. Hold `Space` while dragging to move it, `Shift` to lock an axis, or `Option` to grow it from the center. Arrow keys move the pointer one point at a time, before or during a drag, so an edge lands exactly where you want it. `Space` before dragging switches to picking a window. `Esc` cancels. To select on a still of the moment you pressed the hotkey, so menus and hover states stay put, turn on Settings → Capture → Freeze the screen while selecting.
+- **Capture Area** (⇧⌘2): drag a rectangle, the same way as with the macOS ⇧⌘4. Hold `Space` while dragging to move it, `Shift` to lock an axis, or `Option` to grow it from the center. `Space` before dragging switches to picking a window. `Esc` cancels.
+- To select on a still of the moment you pressed the hotkey, so menus and hover states stay put, turn on Settings → Capture → Freeze the screen while selecting. That selection also takes arrow keys, which move the pointer one point at a time for an exact edge.
 - **Capture Screen** (⇧⌘1) takes the display under the pointer, or every display in one image with Settings → Capture → All displays in one image. **Delayed Screenshot** waits a few seconds first (3 by default, set in Settings → Capture).
 - **Capture Window**: click a window. `Tab` picks the one behind it. Settings → Capture chooses what goes behind the window: wallpaper, transparency, a color, or nothing but the window.
 - **Scrolling Capture**: select the area, then keep your hands off the mouse while Kiri scrolls and stitches. `Esc` stops and keeps what was captured. It needs Accessibility access. If an app ignores it, turn on Settings → Capture → Scroll by hand and scroll yourself.
 - **Recognize Text or QR** (⌃⌥⌘O): select an area and its text or QR code is copied.
-- **Repeat Area Capture** takes the last area again, and **Reopen Last Screenshot** brings back the last editor you closed, with its annotations still editable.
+- **Repeat Area Capture** takes the last area again. It remembers only areas selected while Freeze the screen is on. **Reopen Last Screenshot** brings back the last editor you closed, with its annotations still editable.
 
 To capture with ⇧⌘3 and ⇧⌘4 instead, pick Instead of macOS on first launch, or Use ⇧⌘3 and ⇧⌘4 in Settings → Hotkeys. Kiri turns those two shortcuts off in macOS; ⇧⌘5 still opens the macOS screenshot toolbar. To get them back, turn them on in System Settings → Keyboard → Keyboard Shortcuts → Screenshots.
 
