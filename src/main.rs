@@ -638,12 +638,42 @@ pub fn open_window<V: Render>(
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
 ) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
+    open_root(options, false, cx, build)
+}
+
+/// `open_window` for a window that draws its own shape. The theme fills every
+/// root, which shows as a rectangle around a rounded toast or the live screen.
+pub fn open_clear_window<V: Render>(
+    options: WindowOptions,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
+    open_root(options, true, cx, build)
+}
+
+/// GPUI draws a window once while opening it, so a clear root must be clear before that.
+fn open_root<V: Render>(
+    options: WindowOptions,
+    clear: bool,
+    cx: &mut App,
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
+) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
     // The system may have switched while no window was open to notice.
     sync_theme(cx.window_appearance(), cx);
-    gpui_kit::open_window(options, cx, |window, cx| {
+    let mut built = None;
+    let handle = cx.open_window(options, |window, cx| {
         window.observe_window_appearance(|window, cx| sync_theme(window.appearance(), cx)).detach();
-        build(window, cx)
-    })
+        let view = build(window, cx);
+        built = Some(view.clone());
+        cx.new(|cx| {
+            let mut root = gpui_kit::base::Root::new(view, window, cx);
+            if clear {
+                root.style().refine(&StyleRefinement::default().bg(transparent_black()));
+            }
+            root
+        })
+    })?;
+    Ok((handle.into(), built.expect("open_window ran its build closure")))
 }
 
 fn sync_theme(appearance: WindowAppearance, cx: &mut App) {
@@ -660,20 +690,6 @@ pub fn apply_appearance(cx: &mut App) {
         settings::Appearance::Dark => Some(true),
     });
     sync_theme(cx.window_appearance(), cx);
-}
-
-/// `open_window` for a window that draws its own shape. The theme fills every
-/// root, which shows as a rectangle around a rounded toast or the live screen.
-pub fn open_clear_window<V: Render>(
-    options: WindowOptions,
-    cx: &mut App,
-    build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
-) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
-    let opened = open_window(options, cx, build)?;
-    if let Some(root) = opened.0.downcast::<gpui_kit::base::Root>() {
-        let _ = root.update(cx, |root, _, _| root.style().refine(&StyleRefinement::default().bg(transparent_black())));
-    }
-    Ok(opened)
 }
 
 pub fn deliver_shot(shot: mac::Shot, cx: &mut App) {
