@@ -209,6 +209,8 @@ pub struct Settings {
     pub scroll_manual: bool,
     /// The overlay shows a still of the moment the hotkey was pressed, instead of the live screen.
     pub freeze_screen: bool,
+    /// Capture Screen takes every display as arranged, instead of the one under the pointer.
+    pub fullscreen_all_displays: bool,
     /// `kiri --capture` may run captures; off, a request asks first.
     pub automation: bool,
     pub hotkeys: BTreeMap<Capture, Option<String>>,
@@ -245,6 +247,7 @@ impl Default for Settings {
             scroll_manual: false,
             automation: false,
             freeze_screen: false,
+            fullscreen_all_displays: false,
             hotkeys: BTreeMap::new(),
             styles: BTreeMap::new(),
             backdrop: None,

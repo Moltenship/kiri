@@ -286,6 +286,12 @@ fn capture(solid: &Entity<ColorPickerState>, cx: &App) -> Page {
                     .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")],
             ),
             group(
+                "Screen",
+                [row("All displays in one image", toggle("all-displays", |s| s.fullscreen_all_displays, |s, v| s.fullscreen_all_displays = v, cx))
+                    .description("Capture Screen takes every display as they are arranged, instead of the one under the pointer.")
+                    .disabled(cx.displays().len() < 2)],
+            ),
+            group(
                 "Windows",
                 [
                     row("Window background", choice("background", BACKGROUNDS, |s| s.window_background, |s, v| s.window_background = v, cx)),

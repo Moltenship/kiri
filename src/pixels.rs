@@ -371,9 +371,55 @@ pub fn contrast_ratio(a: u32, b: u32) -> f32 {
 }
 
 
+/// Lays displays out as they are arranged, at the sharpest display's scale, so one capture
+/// can hold them all. `origin` is each display's top-left in global points; gaps stay transparent.
+pub fn stitch(shots: Vec<((f32, f32), crate::mac::Shot)>, display: u32) -> Option<crate::mac::Shot> {
+    if shots.is_empty() {
+        return None;
+    }
+    let scale = shots.iter().map(|(_, s)| s.scale).fold(0., f32::max);
+    let size = |s: &crate::mac::Shot| (s.width as f32 / s.scale, s.height as f32 / s.scale);
+    let (x0, y0) = shots.iter().fold((f32::MAX, f32::MAX), |(x, y), ((ox, oy), _)| (x.min(*ox), y.min(*oy)));
+    let (x1, y1) = shots.iter().fold((f32::MIN, f32::MIN), |(x, y), ((ox, oy), s)| (x.max(ox + size(s).0), y.max(oy + size(s).1)));
+    let (w, h) = (((x1 - x0) * scale).round() as u32, ((y1 - y0) * scale).round() as u32);
+    let mut bgra = vec![0u8; (w * h * 4) as usize];
+    for ((ox, oy), s) in &shots {
+        let (dx, dy) = (((ox - x0) * scale).round() as u32, ((oy - y0) * scale).round() as u32);
+        let (dw, dh) = ((size(s).0 * scale).round() as u32, (size(s).1 * scale).round() as u32);
+        let (dw, dh) = (dw.min(w - dx) as usize, dh.min(h - dy) as usize);
+        let cols: Vec<usize> = (0..dw).map(|x| ((x as f32 * s.scale / scale) as u32).min(s.width - 1) as usize * 4).collect();
+        for y in 0..dh {
+            let sy = ((y as f32 * s.scale / scale) as u32).min(s.height - 1) as usize;
+            let src = &s.bgra[sy * s.width as usize * 4..][..s.width as usize * 4];
+            let row = &mut bgra[((dy as usize + y) * w as usize + dx as usize) * 4..][..dw * 4];
+            if s.scale == scale {
+                row.copy_from_slice(&src[..dw * 4]);
+            } else {
+                for (px, &from) in row.chunks_exact_mut(4).zip(&cols) {
+                    px.copy_from_slice(&src[from..from + 4]);
+                }
+            }
+        }
+    }
+    Some(crate::mac::Shot { display, width: w, height: h, scale, bgra })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stitch_lays_displays_out_at_the_sharpest_scale() {
+        use crate::mac::Shot;
+        let px = |v: u8| [v, v, v, 255];
+        let retina = Shot { display: 1, width: 4, height: 4, scale: 2., bgra: px(1).repeat(16) };
+        let plain = Shot { display: 2, width: 2, height: 1, scale: 1., bgra: [px(2), px(3)].concat() };
+        let s = stitch(vec![((0., 0.), retina), ((2., 1.), plain)], 7).unwrap();
+        assert_eq!((s.width, s.height, s.scale, s.display), (8, 4, 2., 7));
+        let at = |x: u32, y: u32| s.bgra[((y * 8 + x) * 4) as usize];
+        assert_eq!((at(0, 0), at(4, 2), at(5, 3), at(6, 2), at(7, 3)), (1, 2, 2, 3, 3));
+        assert_eq!(s.bgra[(4 * 4 + 3) as usize], 0, "a gap stays transparent");
+    }
 
     #[test]
     fn transparent_edges_have_no_background() {

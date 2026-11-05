@@ -577,8 +577,19 @@ fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandl
 
 fn fullscreen(cx: &mut App) {
     let display = mac::display_under_cursor();
+    let displays: Vec<u32> = match settings::get(cx).fullscreen_all_displays {
+        true => cx.displays().iter().map(|d| u64::from(d.id()) as u32).collect(),
+        false => vec![display],
+    };
     cx.spawn(async move |cx| {
-        if let Some(shot) = mac::capture_display(display).await {
+        let shot = if let [one] = displays[..] {
+            mac::capture_display(one).await
+        } else {
+            let shots = futures::future::join_all(displays.into_iter().map(mac::capture_display)).await;
+            let placed = shots.into_iter().flatten().map(|s| (mac::display_origin(s.display), s)).collect();
+            cx.background_executor().spawn(async move { pixels::stitch(placed, display) }).await
+        };
+        if let Some(shot) = shot {
             cx.update(|cx| deliver_shot(shot, cx));
         }
     })

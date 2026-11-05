@@ -58,7 +58,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Idea: snap to window or UI edges.
 
 ### 02 Fullscreen and delayed capture
-- Fullscreen captures the display under the cursor. "All displays stitched" is an option.
+- Fullscreen captures the display under the cursor. Settings → Capture → All displays in one image lays every display out as arranged, at the sharpest display's scale, with transparent gaps.
 - Delay is configurable (3 s default), with a countdown that stays out of the shot. The delay can also start an area capture.
 
 ### 03 Window capture
