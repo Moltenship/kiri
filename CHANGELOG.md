@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+- In a narrow editor window, the readouts at the right of the toolbar no longer run off its edge: the ones that don't fit hide whole, Zoom first.
+
 ## [0.2.1] - 2026-11-06
 
 ### Fixed

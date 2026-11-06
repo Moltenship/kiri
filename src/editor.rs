@@ -2841,6 +2841,8 @@ impl Editor {
                 .child(div().text_xs().text_color(cx.theme().muted_foreground).child(caption))
         };
 
+        let slot = || h_flex().h(px(TOOLBAR_H)).flex_none();
+
         let bar = h_flex()
             .h(px(TOOLBAR_H))
             .flex_none()
@@ -2908,8 +2910,14 @@ impl Editor {
                     .when(cfg!(windows), |d| d.window_control_area(WindowControlArea::Drag)),
             )
             .child(
+                // A stat that doesn't fit wraps onto a clipped second row, so narrow windows drop the last ones whole.
                 h_flex()
-                    .gap_4()
+                    .min_w_0()
+                    .h(px(TOOLBAR_H))
+                    .flex_wrap()
+                    .justify_end()
+                    .overflow_hidden()
+                    .gap_x_4()
                     .when_some(contrast, |d, (a, b)| {
                         let ratio = pixels::contrast_ratio(a, b);
                         let grade = match ratio {
@@ -2921,6 +2929,7 @@ impl Editor {
                         d.child(
                             h_flex()
                                 .id("contrast")
+                                .h(px(TOOLBAR_H))
                                 .gap_2()
                                 .tooltip(|window, cx| {
                                     Tooltip::new("WCAG 2 contrast of the two main colors in the selection. 4.5 is enough for text, 3 for large text and UI.")
@@ -2930,7 +2939,7 @@ impl Editor {
                                 .child(stat(format!("{ratio:.2} {grade}"), "Contrast")),
                         )
                     })
-                    .child(
+                    .child(slot().child(
                         Popover::new("color-format")
                             .anchor(Anchor::TopRight)
                             .trigger(
@@ -2973,10 +2982,10 @@ impl Editor {
                                             )),
                                     )
                             }),
-                    )
+                    ))
                     .child({
                         let editor = cx.entity();
-                        Popover::new("size")
+                        slot().child(Popover::new("size")
                             .anchor(Anchor::TopRight)
                             .on_open_change({
                                 let editor = editor.clone();
@@ -2987,14 +2996,15 @@ impl Editor {
                                 }
                             })
                             .trigger(Button::new("size").ghost().child(stat(size_text, size_caption)))
-                            .content(move |_, _, cx| size_popover(&editor, cx))
+                            .content(move |_, _, cx| size_popover(&editor, cx)))
                     })
                     .child(
-                        div()
-                            .id("zoom")
-                            .cursor_pointer()
-                            .on_click(cx.listener(|this, _, _, cx| this.fit_all(cx)))
-                            .child(stat(format!("{zoom_pct}%"), "Zoom")),
+                        slot().child(
+                            Button::new("zoom")
+                                .ghost()
+                                .child(stat(format!("{zoom_pct}%"), "Zoom"))
+                                .on_click(cx.listener(|this, _, _, cx| this.fit_all(cx))),
+                        ),
                     ),
             );
         #[cfg(windows)]
