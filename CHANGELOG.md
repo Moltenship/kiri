@@ -2,7 +2,9 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-06
+
+Kiri for Windows. Download `Kiri-Setup.exe` from the release. It isn't code-signed yet, so SmartScreen may ask once: More info, then Run anyway.
 
 ### Added
 - Windows: capture a window or the active window, even when it's covered.
@@ -26,10 +28,8 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 - Windows: in text annotations, Ctrl moves and deletes by word, and Home and End go to the start and end of the line.
 - Windows: keys read as Windows writes them (Ctrl+Shift+2, Win, PrtScn) everywhere, Capture Text defaults to Ctrl+Shift+3, Ctrl+Y redoes, and Ctrl+Shift+W closes all editors.
 - Windows: Settings hides the macOS-only Selection and ⌘Q rows, and Freeze the screen is always available.
-
-### Fixed
-- Windows: Alt, not the Win key, points a new arrow back at where you started, and Ctrl draws an arrow from its center. Ctrl takes the Win key's place in other editor drags too.
-- Windows: a hotkey records the key you press whatever the keyboard layout, so Alt+Shift+4 on a Russian layout is Alt+Shift+4, not Alt+;.
+- Windows: Alt points a new arrow back at where you started, and Ctrl draws an arrow from its center. Ctrl takes ⌘'s place in other editor drags too.
+- Windows: a hotkey records the key you press on any keyboard layout, so Alt+Shift+4 on a Russian layout stays Alt+Shift+4.
 
 ## [0.1.0] - 2026-11-05
 
