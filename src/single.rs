@@ -60,20 +60,26 @@ impl Then {
 /// Sends `open` (a file to edit), a capture, or nothing (show Settings) to a running Kiri.
 /// Returns false when none is running.
 pub fn forward(open: Option<&Path>, capture: Option<(Capture, Option<Then>)>) -> bool {
-    #[cfg(unix)]
-    let stream = UnixStream::connect(socket());
-    #[cfg(windows)]
-    let stream = std::fs::OpenOptions::new().write(true).open(socket());
-    let Ok(mut stream) = stream else {
-        return false;
-    };
     let line = match (open.and_then(|p| std::path::absolute(p).ok()), capture) {
         (Some(path), _) => format!("open {}\n", path.display()),
         (None, Some((capture, None))) => format!("capture {}\n", capture.cli_name()),
         (None, Some((capture, Some(then)))) => format!("capture {} then={}\n", capture.cli_name(), then.arg()),
         (None, None) => "settings\n".into(),
     };
-    stream.write_all(line.as_bytes()).is_ok()
+    send(&line)
+}
+
+/// Quits a running Kiri as its tray menu's Quit does; the Windows installer and uninstaller use it.
+pub fn quit() {
+    send("quit\n");
+}
+
+fn send(line: &str) -> bool {
+    #[cfg(unix)]
+    let stream = UnixStream::connect(socket());
+    #[cfg(windows)]
+    let stream = std::fs::OpenOptions::new().write(true).open(socket());
+    stream.is_ok_and(|mut stream| stream.write_all(line.as_bytes()).is_ok())
 }
 
 pub fn listen(tx: UnboundedSender<Command>) {
@@ -95,7 +101,9 @@ pub fn listen(tx: UnboundedSender<Command>) {
             if BufReader::new(stream).read_line(&mut line).is_err() {
                 continue;
             }
-            let command = match line.trim_end_matches('\n').split_once(' ') {
+            let line = line.trim_end_matches('\n');
+            let command = match line.split_once(' ') {
+                _ if line == "quit" => Command::Quit,
                 Some(("open", path)) => Command::Open(path.into(), false),
                 Some(("capture", rest)) => {
                     let (name, then) = match rest.split_once(" then=") {

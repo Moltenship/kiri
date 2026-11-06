@@ -278,6 +278,9 @@ fn main() {
         })
     });
     let capture = capture.map(|c| (c, then));
+    if args.iter().any(|a| a == "--quit") {
+        return single::quit();
+    }
     #[cfg(windows)]
     win::dpi_aware();
     if demo.is_none() && single::forward(open.as_deref().map(std::path::Path::new), capture) {
@@ -322,6 +325,8 @@ fn main() {
             let _ = tx.unbounded_send(Command::Automation(capture, then));
         }
         single::listen(tx.clone());
+        #[cfg(windows)]
+        win::update::note_installed_version();
         let resident = install_resident(tx);
         cx.set_global(resident);
         for keys in reload_hotkeys(cx) {

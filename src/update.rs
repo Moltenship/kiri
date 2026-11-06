@@ -72,7 +72,7 @@ pub fn start(cx: &mut App) {
 pub fn check(manual: bool, cx: &mut App) {
     let Some(app) = bundle() else {
         if manual {
-            let text = crate::platform_text("Updates need Kiri.app; this build runs on its own", "Updates need Kiri from its release zip; this build runs on its own");
+            let text = crate::platform_text("Updates need Kiri.app; this build runs on its own", "Updates need Kiri from Kiri-Setup.exe or the release zip; this build runs on its own");
             crate::toast::show(text, cx);
         }
         return;

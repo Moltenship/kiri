@@ -64,6 +64,29 @@ pub fn swap(staged: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Settings → Apps shows the version Kiri-Setup.exe installed, so an update in place corrects it.
+pub fn note_installed_version() {
+    use windows::Win32::System::Registry::*;
+    use windows::core::w;
+    // The AppId in windows/Kiri.iss.
+    let key = w!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{6D9B7D82-FF2E-4481-BBD7-6A4A225A5970}_is1");
+    let read = |name| {
+        let mut buf = [0u16; 512];
+        let mut size = (buf.len() * 2) as u32;
+        unsafe { RegGetValueW(HKEY_CURRENT_USER, key, name, RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut size)) }
+            .ok()
+            .ok()?;
+        Some(String::from_utf16_lossy(&buf[..buf.iter().position(|&c| c == 0)?]))
+    };
+    let (Some(dir), Some(shown)) = (read(w!("InstallLocation")), read(w!("DisplayVersion"))) else { return };
+    let here = bundle().is_some_and(|b| b.to_string_lossy().eq_ignore_ascii_case(dir.trim_end_matches('\\')));
+    let version = env!("CARGO_PKG_VERSION");
+    if here && shown != version {
+        let value: Vec<u16> = version.encode_utf16().chain([0]).collect();
+        let _ = unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, key, w!("DisplayVersion"), REG_SZ.0, Some(value.as_ptr().cast()), (value.len() * 2) as u32) };
+    }
+}
+
 fn old(exe: &Path) -> PathBuf {
     let mut name = exe.as_os_str().to_owned();
     name.push(".old");
