@@ -2,7 +2,7 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.2.2] - 2026-11-06
 
 ### Fixed
 - In a narrow editor window, the color, size and zoom readouts no longer run off the toolbar's edge. The tools that don't fit move into the More (…) menu instead, as in Shottr.
