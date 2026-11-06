@@ -165,7 +165,7 @@ pub fn bind_keys(cx: &mut App) {
             }
         })
     });
-    cx.bind_keys([
+    crate::bind_keys(cx, [
         KeyBinding::new(crate::keys("cmd-,"), OpenSettings, None),
         KeyBinding::new(crate::keys("shift-cmd-o"), OpenFile, None),
         KeyBinding::new(crate::keys("shift-cmd-v"), OpenClipboard, None),
@@ -173,7 +173,7 @@ pub fn bind_keys(cx: &mut App) {
     ]);
     // Windows quits from the tray; Alt+F4 closes the window.
     if !cfg!(windows) {
-        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+        crate::bind_keys(cx, [KeyBinding::new("cmd-q", Quit, None)]);
     }
     let base = Some("Editor");
     let idle = Some("Editor && !text");
@@ -230,7 +230,7 @@ pub fn bind_keys(cx: &mut App) {
     tool_keys!(Select => ToolSelect, Arrow => ToolArrow, Text => ToolText, Rect => ToolRect,
         Oval => ToolOval, Line => ToolLine, Pen => ToolPen, Highlighter => ToolHighlighter,
         Counter => ToolCounter, Redact => ToolRedact, Spotlight => ToolSpotlight, Magnifier => ToolMagnifier);
-    cx.bind_keys(keys);
+    crate::bind_keys(cx, keys);
 }
 
 const TOOLBAR_H: f32 = 52.;
@@ -1955,7 +1955,7 @@ impl Editor {
         if m.platform || m.control {
             return;
         }
-        match k.key.as_str() {
+        match crate::shortcut_key(&k.key) {
             "space" => self.space = true,
             "1" if !e.is_held => self.hold_ruler(Axis::Vertical),
             "2" if !e.is_held => self.hold_ruler(Axis::Horizontal),
@@ -1989,7 +1989,7 @@ impl Editor {
     }
 
     fn key_up(&mut self, e: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        match e.keystroke.key.as_str() {
+        match crate::shortcut_key(&e.keystroke.key) {
             "space" => self.space = false,
             // An axis stays while any of its keys is still down: 1 or ↑↓, 2 or ←→.
             "1" | "up" | "down" if ![18, 125, 126].into_iter().any(mac::key_pressed) => {

@@ -185,6 +185,23 @@ pub fn keys(keys: &'static str) -> &'static str {
     }
 }
 
+/// Binds Kiri's shortcuts. On Windows they follow the key whatever the layout, as they do on macOS.
+pub fn bind_keys(cx: &mut App, bindings: impl IntoIterator<Item = KeyBinding>) {
+    #[cfg(windows)]
+    win::bind_keys(cx, bindings);
+    #[cfg(not(windows))]
+    cx.bind_keys(bindings);
+}
+
+/// The key a shortcut handler matches: on Windows the US key in its place, whatever the layout types.
+pub fn shortcut_key(key: &str) -> &str {
+    #[cfg(windows)]
+    if let Some((name, _)) = win::physical_key(key) {
+        return name;
+    }
+    key
+}
+
 /// `mac` on macOS and `windows` on Windows, for text that names keys or parts of the system.
 pub const fn platform_text(mac: &'static str, windows: &'static str) -> &'static str {
     if cfg!(windows) { windows } else { mac }

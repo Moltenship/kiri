@@ -195,6 +195,10 @@ mod tests {
         assert_eq!(key_name(0x00BA), Some(";"));
         assert_eq!(key_name(0x00BF), Some("/"));
         assert_eq!(key_name(0x0651), Some("q"));
+        // Russian "б" is VK_OEM_COMMA, so Ctrl+б is Ctrl+,; French "&" and "é" are VK_1 and VK_2, the measuring keys.
+        assert_eq!(key_name(0x00BC), Some(","));
+        assert_eq!(key_name(0x0031), Some("1"));
+        assert_eq!(key_name(0x0032), Some("2"));
         // Typed by no key, and German "<", VK_OEM_102, which has no US key.
         assert_eq!(key_name(-1), None);
         assert_eq!(key_name(0x00E2), None);

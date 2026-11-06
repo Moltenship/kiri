@@ -17,7 +17,7 @@ use crate::tiled::TiledImage;
 actions!(pin, [CopyAndClose, ClosePin, EditPin]);
 
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
+    crate::bind_keys(cx, [
         KeyBinding::new(crate::keys("cmd-c"), CopyAndClose, Some("Pin")),
         KeyBinding::new("escape", ClosePin, Some("Pin")),
         KeyBinding::new(crate::keys("cmd-w"), ClosePin, Some("Pin")),
