@@ -2498,12 +2498,12 @@ fn color_diff(a: u32, b: u32) -> i32 {
         .sum()
 }
 
-/// `cmd` points a new arrow back at where the drag started, as the alternative does.
 /// ⌘ in a drag. On Windows that's Ctrl: Win opens the Start menu when it's let go.
 fn cmd_held(m: Modifiers) -> bool {
     if cfg!(windows) { m.control } else { m.platform }
 }
 
+/// `cmd` points a new arrow back at where the drag started, as the alternative does.
 fn shape_drag(shape: &mut Shape, start: P, p: P, shift: bool, alt: bool, cmd: bool, scale: f32) {
     let boxed = |p: P| {
         let b = if shift { doc::square(start, p) } else { p };
