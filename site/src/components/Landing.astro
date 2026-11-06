@@ -8,9 +8,10 @@ import { FEATURES } from '../features/copy'
 const GITHUB = 'https://github.com/Moltenship/kiri'
 const RELEASES = `${GITHUB}/releases`
 const DMG = `${RELEASES}/latest/download/Kiri.dmg`
+const SETUP = `${RELEASES}/latest/download/Kiri-Setup.exe`
 const F = FEATURES
-const TITLE = 'Kiri: free, open-source screenshot tool for Mac'
-const DESCRIPTION = 'Capture, mark up and paste in seconds. Scrolling capture, text recognition, blur, measuring and pinning. A free, open-source Shottr alternative for macOS.'
+const TITLE = 'Kiri: free, open-source screenshot tool for Mac and Windows'
+const DESCRIPTION = 'Capture, mark up and paste in seconds. Scrolling capture, text recognition, blur, measuring and pinning. A free, open-source Shottr alternative for macOS and Windows.'
 const OG_IMAGE = new URL('/og.png', Astro.site).href
 const APP = {
   '@context': 'https://schema.org',
@@ -18,9 +19,9 @@ const APP = {
   name: 'Kiri',
   description: DESCRIPTION,
   url: Astro.site!.href,
-  downloadUrl: DMG,
+  downloadUrl: [DMG, SETUP],
   applicationCategory: 'UtilitiesApplication',
-  operatingSystem: 'macOS 15.2 or later',
+  operatingSystem: 'macOS 15.2 or later, Windows 10 or later',
   license: 'https://opensource.org/licenses/MIT',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
 }
@@ -48,6 +49,7 @@ const APP = {
     <script type="application/ld+json" set:html={JSON.stringify(APP)} />
     <script is:inline>
       try { const t = localStorage.getItem('kiri-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t } catch {}
+      if (/^Win/.test(navigator.userAgentData?.platform ?? navigator.platform)) document.documentElement.dataset.os = 'windows'
     </script>
   </head>
   <body>
@@ -57,25 +59,28 @@ const APP = {
         <a href="#features">Features</a>
         <a class="nav-gh" href={GITHUB}><Logo name="github" size={15} />GitHub<span class="stars" data-stars hidden></span></a>
       </nav>
-      <a class="btn btn--small" href={DMG}><Logo name="apple" size={14} />Download</a>
+      <a class="btn btn--small" data-for="mac" href={DMG}><Logo name="apple" size={14} />Download</a>
+      <a class="btn btn--small" data-for="windows" href={SETUP}><Logo name="windows" size={12} />Download</a>
     </header>
 
     <main>
       <section class="hero">
-        <a class="eyebrow" href={RELEASES}>0.1.0 <span>·</span> free and open source</a>
+        <a class="eyebrow" href={RELEASES}>0.2.0 <span>·</span> free and open source</a>
         <h1>Screenshot, mark it&nbsp;up, paste.</h1>
         <p class="lede">
-          Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd>, drag, mark it up, then <kbd>Esc</kbd>. The image is on your clipboard.
+          Press <span data-for="mac"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd></span><span data-for="windows"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>2</kbd></span>, drag, mark it up, then <kbd>Esc</kbd>. The image is on your clipboard.
           Click the editor below to take over.
         </p>
         <div class="ctas">
-          <a class="btn" href={DMG}><Logo name="apple" />Download for macOS</a>
+          <a class="btn" data-for="mac" href={DMG}><Logo name="apple" />Download for macOS</a>
+          <a class="btn" data-for="windows" href={SETUP}><Logo name="windows" size={14} />Download for Windows</a>
           <a class="btn btn--ghost" href={GITHUB}><Logo name="github" />Star on GitHub<span class="stars" data-stars hidden></span></a>
         </div>
         <p class="platforms-line">
           <span class="platform"><Logo name="apple" size={13} />macOS 15.2+ on Apple Silicon</span>
-          <span class="soon"><Logo name="windows" size={12} />Windows · coming soon</span>
+          <span class="platform"><Logo name="windows" size={12} />Windows 10 and 11</span>
           <span class="soon"><Logo name="linux" size={13} />Linux · coming soon</span>
+          <a class="all" href="#platforms">All downloads</a>
         </p>
       </section>
 
@@ -97,7 +102,7 @@ const APP = {
             </article>
           ))}
           <article class="tile span-3">
-            <p class="tile-copy"><b>Nothing leaves your Mac.</b> No account, no cloud, no telemetry. The one request Kiri makes is the daily update check.</p>
+            <p class="tile-copy"><b>Nothing leaves your computer.</b> No account, no cloud, no telemetry. The one request Kiri makes is the daily update check.</p>
             <div class="net" aria-hidden="true">
               <div class="net-head"><img src="/icon.png" width="20" height="20" alt="" /><b>Kiri</b><span>Outgoing connections today</span></div>
               <div class="net-row">
@@ -128,14 +133,15 @@ const APP = {
         <p class="get-lede">Free and open source. No account to make.</p>
         <div class="ctas">
           <a class="btn" href={DMG}><Logo name="apple" />Download for macOS</a>
-          <a class="btn btn--ghost" href={GITHUB}><Logo name="github" />Star on GitHub<span class="stars" data-stars hidden></span></a>
+          <a class="btn" href={SETUP}><Logo name="windows" size={14} />Download for Windows</a>
         </div>
         <ul class="os">
           <li data-ready><Logo name="apple" /><b>macOS</b><span>15.2+ on Apple Silicon</span></li>
-          <li><Logo name="windows" /><b>Windows</b><span>Coming soon</span></li>
+          <li data-ready><Logo name="windows" /><b>Windows</b><span>10 and 11, x64</span></li>
           <li><Logo name="linux" /><b>Linux</b><span>Coming soon</span></li>
         </ul>
-        <p class="watch"><a href={RELEASES}>Watch releases on GitHub</a> to hear when Windows and Linux land.</p>
+        <p class="watch">Kiri for Windows isn't signed yet, so SmartScreen may stop the installer once: choose More info, then Run anyway.</p>
+        <p class="watch"><a href={RELEASES}>Watch releases on GitHub</a> to hear when Linux lands.</p>
       </section>
     </main>
 

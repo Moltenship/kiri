@@ -135,6 +135,10 @@ kbd:not(.ss-key) {
   font-size: 13px;
 }
 .platform, .soon { display: inline-flex; align-items: center; gap: 6px; }
+.all { color: var(--ink-2); text-underline-offset: 3px; }
+.all:hover { color: var(--ink); }
+[data-for='windows'], :root[data-os='windows'] [data-for='mac'] { display: none; }
+:root[data-os='windows'] [data-for='windows'] { display: inline-flex; }
 .soon {
   padding: 2px 9px;
   border-radius: 999px;
@@ -229,6 +233,8 @@ h2 {
 .os li { display: flex; align-items: center; gap: 8px; padding: 0 28px; font-size: 15px; }
 .os li + li { border-left: 1px solid var(--line); }
 .os li span:last-child { color: var(--ink-3); }
+.watch + .watch { margin-top: 6px; }
+.watch code { font: 13px var(--mono); }
 .watch { margin: 18px 0 0; color: var(--ink-3); font-size: 14px; }
 
 /* ---------- Footer ---------- */
