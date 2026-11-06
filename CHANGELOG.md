@@ -2,7 +2,7 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.2.1] - 2026-11-06
 
 ### Fixed
 - Windows: shortcuts in Kiri work on any keyboard layout, by the key's place on a US keyboard. On a Russian layout Ctrl+, opens Settings, and zoom, Grow and Shrink Selection, the tool letters, and holding 1 or 2 to measure all work. Text you type still comes in your layout.
