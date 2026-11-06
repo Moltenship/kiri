@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::menu::DropdownMenu;
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::popover::{Popover, PopoverState};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
@@ -573,6 +573,8 @@ pub struct Editor {
     unit_px: bool,
     text_lines: Option<Rc<[R]>>,
     contrast: Cell<Option<(PxRect, Option<(u32, u32)>)>>,
+    /// How many of `TOOL_ACTIONS` fit in the toolbar at the last layout.
+    shown_tools: Rc<Cell<usize>>,
     props_collapsed: bool,
     finding_text: bool,
     zoom: Option<f32>,
@@ -709,6 +711,7 @@ impl Editor {
             unit_px: settings::get(cx).unit_px,
             text_lines: None,
             contrast: Cell::new(None),
+            shown_tools: Rc::new(Cell::new(TOOL_ACTIONS.len())),
             props_collapsed: false,
             finding_text: false,
             zoom: None,
@@ -2777,11 +2780,20 @@ impl Editor {
                 .child(icon_button("s-erase", IconName::Eraser, "Erase", Box::new(Delete)))
                 .child(icon_button("s-cancel", IconName::X, "Cancel selection", Box::new(Cancel)))
         } else {
-            h_flex()
-                .p(px(3.))
+            let shown = self.shown_tools.clone();
+            let hidden = TOOL_ACTIONS[shown.get()..].iter().any(|(t, _)| *t == self.tool);
+            // Tools that don't fit wrap onto a clipped second row; the More menu lists them instead.
+            let row = h_flex()
+                .min_w_0()
+                .h(px(24.))
+                .flex_wrap()
+                .overflow_hidden()
                 .gap(px(2.))
-                .rounded(theme.radius_lg)
-                .bg(theme.muted)
+                .on_children_prepainted(move |bounds, _, _| {
+                    let fit = bounds.iter().take_while(|b| b.origin.y == bounds[0].origin.y).count();
+                    // The ruler hint sits after Text and isn't a tool.
+                    shown.set(if fit > 3 { fit - 1 } else { fit });
+                })
                 .children(TOOL_ACTIONS.iter().flat_map(|(tool, action)| {
                     let tool = *tool;
                     let button = Button::new(("tool", tool as usize))
@@ -2793,16 +2805,40 @@ impl Editor {
                         .on_click(cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)));
                     // The ruler is held, not picked, so its button only explains the keys.
                     std::iter::once(button.into_any_element()).chain((tool == Tool::Text).then(|| ruler_hint().into_any_element()))
-                }))
+                }));
+            h_flex()
+                .min_w_0()
+                .p(px(3.))
+                .gap(px(2.))
+                .rounded(theme.radius_lg)
+                .bg(theme.muted)
+                .child(row)
                 .child({
                     let focus = self.focus.clone();
-                    Button::new("more").icon(Icon::new(IconName::Ellipsis)).ghost().small().tooltip("More").dropdown_menu(
-                        move |menu, _, _| {
-                            menu.action_context(focus.clone())
+                    let shown = self.shown_tools.clone();
+                    let editor = cx.weak_entity();
+                    Button::new("more")
+                        .icon(Icon::new(IconName::Ellipsis))
+                        .ghost()
+                        .small()
+                        .selected(hidden)
+                        .tooltip("More")
+                        .dropdown_menu(move |menu, _, _| {
+                            let tail = &TOOL_ACTIONS[shown.get()..];
+                            tail.iter()
+                                .fold(menu.action_context(focus.clone()), |menu, &(tool, action)| {
+                                    // Tool actions only bind while the canvas has focus, which the open menu holds.
+                                    let editor = editor.clone();
+                                    menu.item(PopupMenuItem::new(tool.name()).icon(Icon::new(tool_icon(tool))).action(action()).on_click(
+                                        move |_, window, cx| {
+                                            let _ = editor.update(cx, |this, cx| this.set_tool(tool, window, cx));
+                                        },
+                                    ))
+                                })
+                                .when(!tail.is_empty(), |menu| menu.separator())
                                 .menu("Add Capture", Box::new(AddCapture))
                                 .menu("Paste Image", Box::new(Paste))
-                        },
-                    )
+                        })
                 })
         };
 
@@ -2840,8 +2876,6 @@ impl Editor {
                 .child(div().text_sm().font_medium().child(value))
                 .child(div().text_xs().text_color(cx.theme().muted_foreground).child(caption))
         };
-
-        let slot = || h_flex().h(px(TOOLBAR_H)).flex_none();
 
         let bar = h_flex()
             .h(px(TOOLBAR_H))
@@ -2910,14 +2944,9 @@ impl Editor {
                     .when(cfg!(windows), |d| d.window_control_area(WindowControlArea::Drag)),
             )
             .child(
-                // A stat that doesn't fit wraps onto a clipped second row, so narrow windows drop the last ones whole.
                 h_flex()
-                    .min_w_0()
-                    .h(px(TOOLBAR_H))
-                    .flex_wrap()
-                    .justify_end()
-                    .overflow_hidden()
-                    .gap_x_4()
+                    .flex_none()
+                    .gap_4()
                     .when_some(contrast, |d, (a, b)| {
                         let ratio = pixels::contrast_ratio(a, b);
                         let grade = match ratio {
@@ -2929,7 +2958,6 @@ impl Editor {
                         d.child(
                             h_flex()
                                 .id("contrast")
-                                .h(px(TOOLBAR_H))
                                 .gap_2()
                                 .tooltip(|window, cx| {
                                     Tooltip::new("WCAG 2 contrast of the two main colors in the selection. 4.5 is enough for text, 3 for large text and UI.")
@@ -2939,7 +2967,7 @@ impl Editor {
                                 .child(stat(format!("{ratio:.2} {grade}"), "Contrast")),
                         )
                     })
-                    .child(slot().child(
+                    .child(
                         Popover::new("color-format")
                             .anchor(Anchor::TopRight)
                             .trigger(
@@ -2982,10 +3010,10 @@ impl Editor {
                                             )),
                                     )
                             }),
-                    ))
+                    )
                     .child({
                         let editor = cx.entity();
-                        slot().child(Popover::new("size")
+                        Popover::new("size")
                             .anchor(Anchor::TopRight)
                             .on_open_change({
                                 let editor = editor.clone();
@@ -2996,15 +3024,13 @@ impl Editor {
                                 }
                             })
                             .trigger(Button::new("size").ghost().child(stat(size_text, size_caption)))
-                            .content(move |_, _, cx| size_popover(&editor, cx)))
+                            .content(move |_, _, cx| size_popover(&editor, cx))
                     })
                     .child(
-                        slot().child(
-                            Button::new("zoom")
-                                .ghost()
-                                .child(stat(format!("{zoom_pct}%"), "Zoom"))
-                                .on_click(cx.listener(|this, _, _, cx| this.fit_all(cx))),
-                        ),
+                        Button::new("zoom")
+                            .ghost()
+                            .child(stat(format!("{zoom_pct}%"), "Zoom"))
+                            .on_click(cx.listener(|this, _, _, cx| this.fit_all(cx))),
                     ),
             );
         #[cfg(windows)]
