@@ -820,6 +820,8 @@ fn advanced(cx: &App) -> Page {
     }
 }
 
+const SIDEBAR_W: f32 = 232.;
+
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pages = [general(&self.file_name, cx), capture(&self.solid, &self.max_height, &self.speed, cx), editor(cx), hotkeys(window, cx), advanced(cx)];
@@ -827,7 +829,7 @@ impl Render for SettingsWindow {
         let theme = cx.theme().clone();
 
         let sidebar = v_flex()
-            .w(px(232.))
+            .w(px(SIDEBAR_W))
             .h_full()
             .flex_none()
             .px(px(10.))
@@ -915,12 +917,11 @@ impl Render for SettingsWindow {
             .right_0()
             .h(px(44.))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move());
+        // The caption buttons sit over the content, so the band covers what scrolls under them.
         #[cfg(windows)]
-        let titlebar = titlebar
-            .window_control_area(WindowControlArea::Drag)
-            .flex()
-            .justify_end()
-            .child(crate::mac::caption_buttons(window, cx));
+        let titlebar = titlebar.window_control_area(WindowControlArea::Drag).flex().child(div().w(px(SIDEBAR_W + 1.)).flex_none()).child(
+            div().flex_1().h_full().flex().justify_end().bg(theme.background).child(crate::mac::caption_buttons(window, cx)),
+        );
 
         h_flex()
             .relative()
