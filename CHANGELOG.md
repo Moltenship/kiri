@@ -27,6 +27,7 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 
 ### Fixed
 - Windows: Alt, not the Win key, points a new arrow back at where you started, and Ctrl draws an arrow from its center. Ctrl takes the Win key's place in other editor drags too.
+- Windows: a hotkey records the key you press whatever the keyboard layout, so Alt+Shift+4 on a Russian layout is Alt+Shift+4, not Alt+;.
 
 ## [0.1.0] - 2026-11-05
 

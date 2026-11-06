@@ -656,9 +656,13 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
                     true
                 }
                 key if m.control || m.alt || m.platform || key.starts_with('f') && key.len() > 1 => {
-                    let key = match unshift(key) {
-                        Some(key) => {
-                            m.shift = true;
+                    #[cfg(not(windows))]
+                    let physical = unshift(key).map(|key| (key, true));
+                    #[cfg(windows)]
+                    let physical = crate::mac::physical_key(key);
+                    let key = match physical {
+                        Some((key, shift)) => {
+                            m.shift |= shift;
                             key
                         }
                         None => key,
@@ -691,6 +695,7 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
 }
 
 /// macOS reports Shift-9 as "(", while a global hotkey names the physical key.
+#[cfg(not(windows))]
 fn unshift(key: &str) -> Option<&'static str> {
     const PAIRS: [(&str, &str); 21] = [
         ("!", "1"), ("@", "2"), ("#", "3"), ("$", "4"), ("%", "5"), ("^", "6"), ("&", "7"), ("*", "8"), ("(", "9"), (")", "0"),

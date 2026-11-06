@@ -88,7 +88,7 @@ pub fn theme_window(window: &Window) {
 }
 
 mod keys;
-pub use keys::{SystemKeysOff, SystemShortcut, release_screenshot_keys, system_shortcut, system_shortcuts};
+pub use keys::{SystemKeysOff, SystemShortcut, physical_key, release_screenshot_keys, system_shortcut, system_shortcuts};
 
 pub async fn capture_display(display: u32) -> Option<Shot> {
     let (rect, scale) = monitor_rect(display)?;
