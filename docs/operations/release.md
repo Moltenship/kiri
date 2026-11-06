@@ -30,7 +30,7 @@ After the macOS release exists, run `scripts\release-windows.ps1 -Upload` on Win
 - `dist\Kiri-Setup.exe`, the installer from [`windows/Kiri.iss`](../../windows/Kiri.iss), which users download.
 - `dist\Kiri-windows-x64.zip`, with `Kiri\Kiri.exe` inside, which the updater downloads and which also serves as a portable copy.
 
-Both take their version from `Cargo.toml`. Without `-Upload` the script only builds them. Until the zip is on the release, Windows Kiris that check report that the release has none. Neither asset is code-signed, so SmartScreen warns on its first run from a browser download.
+Both take their version from `Cargo.toml`. Without `-Upload` the script only builds them. Until the zip is on the release, Windows Kiris that check report that the release has none. The site's Download for Windows links the latest release's setup, so upload right after the macOS release. Neither asset is code-signed, so SmartScreen warns on its first run from a browser download.
 
 Never change the setup's `AppId`: later setups find the install by it and upgrade it in place, and [`src/win/update.rs`](../../src/win/update.rs) reads the Settings → Apps entry under it.
 

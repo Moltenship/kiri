@@ -1,6 +1,6 @@
 # Using Kiri
 
-Kiri lives in the menu bar. Every capture is in its menu, and Settings → Hotkeys gives any of them a shortcut.
+Kiri lives in the menu bar, or the tray on Windows. Every capture is in its menu, and Settings → Hotkeys gives any of them a shortcut.
 
 The first launch walks through Screen Recording access, the capture shortcuts, and the look. Settings → General changes the appearance later: System, Light, or Dark.
 
@@ -51,6 +51,19 @@ Add `--then` to choose what happens after that one capture, instead of the after
 
 Kiri can record your screen, so it won't take a capture for another app until you allow it. The first request shows an Allow button. Settings → Advanced → Automation turns it on or off.
 
+## On Windows
+
+Install Kiri with `Kiri-Setup.exe` from the releases page. It installs for your account, without an administrator prompt, and Settings → Apps uninstalls it. Kiri isn't code-signed yet, so SmartScreen may stop the installer the first time: choose More info, then Run anyway.
+
+Everything in this guide works the same way, with Ctrl where macOS uses `⌘` and Alt where it uses `Option`. The differences:
+
+- The capture shortcuts are Ctrl+Shift+2 for Capture Area, Ctrl+Shift+1 for Capture Screen, and Ctrl+Shift+3 for Recognize Text or QR. Use Print Screen in Settings → Hotkeys takes PrtScn from Snipping Tool and gives it to Capture Area, and Shift+PrtScn to Capture Screen.
+- Capture Area always uses Kiri's selection, so Freeze the screen is always available.
+- Alt while drawing an arrow points it back at where you started, and Ctrl draws it from the center.
+- Recognize Text reads the languages installed in Windows, or the one picked in Settings. Of the barcodes, only QR codes are read.
+- The editor has no menu bar: its Menu button holds the same commands, and F11 toggles full screen.
+- Windows asks for no permissions, but Kiri can't scroll windows of apps that run as administrator.
+
 ## Updates
 
-Kiri checks GitHub for a new version once a day. When one is out, a red dot appears on the menu bar icon. Choose Update to Kiri in its menu to download it and restart into it. Check for Updates… checks right away, and Settings → General turns the daily check off.
+Kiri checks GitHub for a new version once a day. When one is out, a red dot appears on the menu bar or tray icon. Choose Update to Kiri in its menu to download it and restart into it. Check for Updates… checks right away, and Settings → General turns the daily check off.
