@@ -28,7 +28,7 @@ In the editor, `Esc` copies and closes, `⌘C` does the same, and `⇧⌘C` copi
 
 Each tool has a letter: `V` select and crop, `A` arrow, `T` text, `R` rectangle, `O` oval, `L` line, `D` pen, `H` highlighter, `C` counter, `B` blur and erase, `S` spotlight, `M` magnifier.
 
-- `Shift` straightens lines and makes squares and circles. `Option` draws from the center. Holding `⌘` while drawing an arrow points it back at where you started.
+- `Shift` straightens lines and makes squares and circles. `Option` draws from the center. Holding `⌘` while drawing an arrow points it back at where you started. On Windows, `Alt` points the arrow back and `Ctrl` draws it from the center.
 - Annotations past the image edge grow the canvas. The new area takes the image's background color, or stays transparent around a window capture.
 - Zoom with the scroll wheel, a pinch, `⌘+` and `⌘-`. `⌘1` fits the image, `⌘0` shows it at 100%.
 - With the select tool, drag to select an area: `Enter` crops to it, `A` trims it to its content, and `Q` or `W` zooms in on its corners for a pixel-exact edge.

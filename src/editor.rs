@@ -1650,7 +1650,7 @@ impl Editor {
             self.finish_text();
         }
         if let Some((id, handle)) = self.handle_at(e.position) {
-            if e.modifiers.platform
+            if cmd_held(e.modifiers)
                 && let Some(i) = [Handle::Start, Handle::End].iter().position(|h| *h == handle)
                 && matches!(self.object(id).map(|o| &o.shape), Some(Shape::Line { .. }))
             {
@@ -1776,13 +1776,13 @@ impl Editor {
             self.snap = m.alt.then(|| self.autoadjusted()).flatten();
             cx.notify();
         }
-        let changed = (m.shift, m.alt, m.platform) != (was.shift, was.alt, was.platform);
+        let changed = (m.shift, m.alt, cmd_held(m)) != (was.shift, was.alt, cmd_held(was));
         let (Some(Drag::Create { id, start }), Some(p), true) = (self.drag.as_ref(), self.cursor, changed) else {
             return;
         };
         let (id, start, scale) = (*id, *start, self.scale);
         if let Some(o) = self.object_mut(id) {
-            shape_drag(&mut o.shape, start, p, m.shift, m.alt, m.platform, scale);
+            shape_drag(&mut o.shape, start, p, m.shift, m.alt, cmd_held(m), scale);
         }
         cx.notify();
     }
@@ -1797,7 +1797,7 @@ impl Editor {
         let view = self.view();
         let p = view.to_image(e.position);
         self.cursor = Some(p);
-        let (shift, alt, cmd) = (e.modifiers.shift, e.modifiers.alt, e.modifiers.platform);
+        let (shift, alt, cmd) = (e.modifiers.shift, e.modifiers.alt, cmd_held(e.modifiers));
         let canvas = self.canvas();
         let tol = SNAP / view.k;
         self.guides.clear();
@@ -2499,6 +2499,11 @@ fn color_diff(a: u32, b: u32) -> i32 {
 }
 
 /// `cmd` points a new arrow back at where the drag started, as the alternative does.
+/// ⌘ in a drag. On Windows that's Ctrl: Win opens the Start menu when it's let go.
+fn cmd_held(m: Modifiers) -> bool {
+    if cfg!(windows) { m.control } else { m.platform }
+}
+
 fn shape_drag(shape: &mut Shape, start: P, p: P, shift: bool, alt: bool, cmd: bool, scale: f32) {
     let boxed = |p: P| {
         let b = if shift { doc::square(start, p) } else { p };
@@ -2508,8 +2513,10 @@ fn shape_drag(shape: &mut Shape, start: P, p: P, shift: bool, alt: bool, cmd: bo
     match shape {
         Shape::Arrow { from, to, .. } => {
             let end = if shift { doc::snap45(start, p) } else { p };
-            let begin = if alt { (2. * start.0 - end.0, 2. * start.1 - end.1) } else { start };
-            (*from, *to) = if cmd { (end, begin) } else { (begin, end) };
+            // Alt reverses on Windows, where Ctrl stands in for ⌘ and draws from the center instead.
+            let (center, reverse) = if cfg!(windows) { (cmd, alt) } else { (alt, cmd) };
+            let begin = if center { (2. * start.0 - end.0, 2. * start.1 - end.1) } else { start };
+            (*from, *to) = if reverse { (end, begin) } else { (begin, end) };
         }
         Shape::Line { from, to, .. } | Shape::Measure { from, to } => {
             *to = if shift { doc::snap45(start, p) } else { p };

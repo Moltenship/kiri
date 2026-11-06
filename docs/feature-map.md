@@ -111,7 +111,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 
 ### 09 Annotations and canvas growth
 - All 8 tools with the same shortcuts. `Shift` constrains (45°, square, circle), `Alt` draws from the center. Arrows can curve through a midpoint handle.
-- Arrows match the alternative's four styles and proportions, with the hand-drawn one as the default. `⌘` while drawing points the arrow back at the drag start.
+- Arrows match the alternative's four styles and proportions, with the hand-drawn one as the default. `⌘` while drawing points the arrow back at the drag start. On Windows `Alt` does, since the Win key opens Start when let go, and `Ctrl` draws an arrow from its center; elsewhere in editor drags `Ctrl` stands in for `⌘`, as in skipping the snap.
 - Counter continues from the highest number on the canvas and offers to renumber after a delete.
 - Highlighter: flat ends, near-horizontal straight strokes come out level, and dragging its end handle draws on as one stroke, with no darker overlap.
 - Text is editable after placing. Label background uses the selected color with automatic text contrast.

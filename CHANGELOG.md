@@ -25,6 +25,9 @@ All notable changes to Kiri. Versions follow [Semantic Versioning](https://semve
 - Windows: keys read as Windows writes them (Ctrl+Shift+2, Win, PrtScn) everywhere, Capture Text defaults to Ctrl+Shift+3, Ctrl+Y redoes, and Ctrl+Shift+W closes all editors.
 - Windows: Settings hides the macOS-only Selection and ⌘Q rows, and Freeze the screen is always available.
 
+### Fixed
+- Windows: Alt, not the Win key, points a new arrow back at where you started, and Ctrl draws an arrow from its center. Ctrl takes the Win key's place in other editor drags too.
+
 ## [0.1.0] - 2026-11-05
 
 The first stable release.
