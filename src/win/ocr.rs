@@ -12,6 +12,9 @@ use crate::ocr::Recognized;
 type Box4 = (f32, f32, f32, f32);
 
 const MARGIN: u32 = 24;
+/// Windows misses UI text under about 12 px tall, so small images are read enlarged, up to this many pixels.
+const UPSCALE: u32 = 3;
+const UPSCALE_PIXELS: u64 = 20_000_000;
 
 /// A QR code's text if the image has one, as on macOS, else the image's text.
 pub fn recognize(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<Recognized, String> {
@@ -69,6 +72,19 @@ fn lines(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<V
     // Text touching the edge goes unread, so the image gets a margin in its corner color.
     // Larger images are read at a whole fraction of their size.
     let max = OcrEngine::MaxImageDimension().map_err(fail)?.max(2 * MARGIN + 1);
+    let up = (1..=UPSCALE)
+        .rev()
+        .find(|s| width.max(height) * s <= max - 2 * MARGIN && (width * s) as u64 * (height * s) as u64 <= UPSCALE_PIXELS)
+        .unwrap_or(1);
+    let enlarged;
+    let (bgra, width, height) = match up {
+        1 => (bgra, width, height),
+        _ => {
+            let image = image::RgbaImage::from_raw(width, height, bgra.to_vec()).ok_or("Invalid image")?;
+            enlarged = image::imageops::resize(&image, width * up, height * up, image::imageops::FilterType::CatmullRom).into_raw();
+            (&enlarged[..], width * up, height * up)
+        }
+    };
     let k = width.max(height).div_ceil(max - 2 * MARGIN).max(1);
     let (w, h) = (width / k + 2 * MARGIN, height / k + 2 * MARGIN);
     let mut pixels: Vec<u8> = bgra[..4].iter().copied().cycle().take((w * h * 4) as usize).collect();
@@ -83,7 +99,7 @@ fn lines(bgra: &[u8], width: u32, height: u32, languages: &[String]) -> Result<V
     let bitmap = SoftwareBitmap::CreateCopyFromBuffer(&writer.DetachBuffer().map_err(fail)?, BitmapPixelFormat::Bgra8, w as i32, h as i32)
         .map_err(fail)?;
     let result = engine.RecognizeAsync(&bitmap).map_err(fail)?.join().map_err(fail)?;
-    let k = k as f32;
+    let k = k as f32 / up as f32;
     let mut lines = Vec::new();
     for line in result.Lines().map_err(fail)? {
         let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);

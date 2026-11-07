@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+- Windows: Pixelate text and Erase text now cover small text, such as names and captions in a UI at 100% scale, which Windows text recognition used to miss.
+
 ## [0.2.2] - 2026-11-06
 
 ### Fixed
