@@ -13,8 +13,6 @@ export type Shape =
   | { id: string; kind: 'counter'; at: P; n: number; color: string }
   | { id: string; kind: 'text'; at: P; text: string; color: string }
 
-export type Box = Extract<Shape, { a: P }>
-
 export type ToolId = 'select' | 'arrow' | 'text' | 'rect' | 'oval' | 'line' | 'pen' | 'highlight' | 'counter' | 'redact' | 'spotlight' | 'magnifier'
 
 /** Kiri's presets (src/doc.rs PALETTE), first seven. */

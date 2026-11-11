@@ -1,5 +1,4 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { useLook } from './looks'
 import './window.css'
 
 export interface WindowProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
@@ -37,8 +36,7 @@ export interface WindowProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title
    * address centered in a pill with a lock, and the page as a white card inset in
    * the frame. Glass is for a browser: give it a `url`.
    * `terminal` is a dark terminal: one surface, no rule under the bar, the
-   * `title` dim and centered (`northwind — zsh`). Fill it with `Prompt` lines,
-   * plain output and a `Caret`.
+   * `title` dim and centered (`northwind — zsh`).
    * `card` is one white card: pale dots, a wide pale address bar, no rule under
    * it, a long soft shadow (the checkout-page browser of a payments site).
    * `hairline` is a small, quiet frame: a short bar over a 1px rule, tiny dots,
@@ -219,58 +217,4 @@ export interface BarProps extends HTMLAttributes<HTMLSpanElement> {
 export function Bar({ w, h = 6, tone = 3, r = 2, shrink, className, style, ...rest }: BarProps) {
   const gives = shrink ?? (typeof w === 'number' && w > h * 3)
   return <span {...rest} className={`ss-bar${className ? ` ${className}` : ''}`} data-shrink={gives || undefined} style={{ width: w, height: h, borderRadius: r, background: INK[tone - 1], ...style }} />
-}
-
-export interface TextProps extends HTMLAttributes<HTMLSpanElement> {
-  children: string
-  /** Filler: the words show only at `realistic` fidelity; at `standard` and `minimal` the line is a bar of about the same width. Write the real copy once and let the stage's fidelity decide. */
-  filler?: boolean
-  /** Bar width in minimal fidelity. Defaults to an estimate from the text. */
-  w?: number
-  h?: number
-  tone?: BarProps['tone']
-  /** Let it wrap. Text is one line by default, so a label never breaks by accident. */
-  wrap?: boolean
-}
-
-/**
- * Text that knows the stage's fidelity: real words normally, a bar of about
- * the same width in minimal. Write real copy once and every look follows.
- */
-export function Text({ children, w, h = 6, tone = 3, wrap, filler, className, style, ...rest }: TextProps) {
-  const { fidelity } = useLook()
-  if (fidelity === 'minimal' || (filler && fidelity !== 'realistic')) {
-    const size = typeof style?.fontSize === 'number' ? style.fontSize : 11
-    return <Bar {...rest} w={w ?? Math.round(children.length * size * 0.52)} h={h} tone={tone} className={className} />
-  }
-  return (
-    <span {...rest} className={`ss-text${className ? ` ${className}` : ''}`} data-wrap={wrap || undefined} style={style}>
-      {children}
-    </span>
-  )
-}
-
-export interface PromptProps extends HTMLAttributes<HTMLDivElement> {
-  /** The working directory shown before the prompt. */
-  path?: string
-  /** What was typed. A string, or a node (a typed string, a Caret after it). */
-  children?: ReactNode
-}
-
-/** A terminal command line: a dim path, the prompt mark, and the command
- * bright. Recolor the path and mark with `--ss-term-path` and
- * `--ss-term-sigil` (set on the window, the stage or any parent). */
-export function Prompt({ path = '~', children, className, ...rest }: PromptProps) {
-  return (
-    <div {...rest} className={`ss-term__line ss-term__prompt${className ? ` ${className}` : ''}`}>
-      <span className="ss-term__path">{path}</span>
-      <span className="ss-term__sigil">❯</span>
-      <span className="ss-term__cmd">{children}</span>
-    </div>
-  )
-}
-
-/** A terminal's block cursor. Blinks unless `still` (while typing, a real one holds solid). */
-export function Caret({ still }: { still?: boolean }) {
-  return <span className="ss-term__caret" data-still={still || undefined} aria-hidden />
 }

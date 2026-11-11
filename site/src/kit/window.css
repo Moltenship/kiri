@@ -345,59 +345,18 @@
     font-variant-ligatures: none;
   }
 
-  .ss-term > * + .ss-term__prompt {
-    margin-top: 8px;
-  }
-
-  .ss-term__line,
   .ss-term > div,
   .ss-term > p {
     margin: 0;
     white-space: pre;
   }
 
-  /* Terminal colors are tokens with these defaults: set --ss-term-path,
-     --ss-term-sigil, --ss-term-ok, --ss-term-err or --ss-term-dim on the
-     window (or any parent) to match a product's accent */
-  .ss-term__path {
-    color: var(--ss-term-path, #6f8ccf);
-  }
-
-  .ss-term__sigil {
-    margin: 0 7px;
-    color: var(--ss-term-sigil, #6ee7a8);
-  }
-
-  .ss-term__cmd {
-    color: #f1f1f3;
-  }
-
-  /* Status color, sparingly: a pass, a failure, a dim aside */
+  /* Status color, sparingly: a pass, a failure, a dim aside. Set --ss-term-ok,
+     --ss-term-err or --ss-term-dim on the window (or any parent) to match a
+     product's accent */
   .ss-term .ok { color: var(--ss-term-ok, #6ee7a8); }
   .ss-term .err { color: var(--ss-term-err, #f87171); }
   .ss-term .dim { color: var(--ss-term-dim, #63636b); }
-
-  .ss-term__caret {
-    display: inline-block;
-    width: 0.6em;
-    height: 1.2em;
-    margin-left: 1px;
-    vertical-align: -0.22em;
-    background: #e8e8ec;
-    animation: ss-term-blink 1.06s steps(1) infinite;
-  }
-
-  .ss-term__caret[data-still] {
-    animation: none;
-  }
-
-  @keyframes ss-term-blink {
-    50% { opacity: 0; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ss-term__caret { animation: none; }
-  }
 
   /* With toolbar controls the bar becomes a unified toolbar, as in Notes or
      Finder: the title goes left beside the lights and the controls go right. */
@@ -600,13 +559,5 @@
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.08),
       0 3px 14px rgba(0, 0, 0, 0.3);
-  }
-
-  .ss-text {
-    white-space: nowrap;
-  }
-
-  .ss-text[data-wrap] {
-    white-space: normal;
   }
 }

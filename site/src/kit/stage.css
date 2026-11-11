@@ -347,14 +347,6 @@
     transition: none !important;
   }
 
-  @keyframes ss-spin {
-    to { transform: rotate(1turn); }
-  }
-
-  @keyframes ss-fade-in {
-    from { opacity: 0; filter: blur(2px); transform: translateY(3px); }
-  }
-
   /* A still (reduced motion, or no script) is the poster, settled: nothing in
      it transitions or animates, so it never shows a frame caught mid-fade */
   .ss-stage[data-still] *,
@@ -439,10 +431,4 @@
 :where(.ss-stage) :is(svg, img):not(html):not(body) {
   max-width: none;
   vertical-align: revert-layer;
-}
-
-/* What a Fly or an Expand carries stays inside it, so its own max-width has
-   to beat the guard above, which a layered rule can't: one type more */
-:where(.ss-stage :is(.ss-fly__lift, .ss-expand__face)) > :is(svg, img):not(html):not(body):not(head) {
-  max-width: 100%;
 }

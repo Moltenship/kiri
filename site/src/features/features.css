@@ -23,13 +23,6 @@
 }
 .ft-mosaic { display: block; }
 
-/* A screenshot or app surface that runs off the right and bottom of the tile. */
-.ft-surface {
-  position: absolute;
-  background: var(--ft-surface);
-  box-shadow: 0 0 0 0.5px var(--ft-edge), 0 14px 36px -18px var(--ft-drop);
-}
-
 /* ---------- Scrolling capture ---------- */
 .sc {
   .sc-page {

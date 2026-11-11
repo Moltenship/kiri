@@ -4,7 +4,9 @@ import Playground from '../demos/Playground'
 import Logo from './Logo.astro'
 import FeatureDemo from '../features/FeatureDemo'
 import { FEATURES } from '../features/copy'
+import cargo from '../../../Cargo.toml?raw'
 
+const VERSION = cargo.match(/^version = "(.+)"/m)![1]
 const GITHUB = 'https://github.com/Moltenship/kiri'
 const RELEASES = `${GITHUB}/releases`
 const DMG = `${RELEASES}/latest/download/Kiri.dmg`
@@ -65,7 +67,7 @@ const APP = {
 
     <main>
       <section class="hero">
-        <a class="eyebrow" href={RELEASES}>0.2.3 <span>·</span> free and open source</a>
+        <a class="eyebrow" href={RELEASES}>{VERSION} <span>·</span> free and open source</a>
         <h1>Screenshot, mark it&nbsp;up, paste.</h1>
         <p class="lede">
           Press <span data-for="mac"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd></span><span data-for="windows"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>2</kbd></span>, drag, mark it up, then <kbd>Esc</kbd>. The image is on your clipboard.
