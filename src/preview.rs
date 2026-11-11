@@ -168,17 +168,6 @@ impl Preview {
     }
 }
 
-#[derive(Clone)]
-struct DragOut(WeakEntity<Preview>);
-
-struct DragGhost;
-
-impl Render for DragGhost {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
-    }
-}
-
 impl Render for Preview {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -217,11 +206,7 @@ impl Render for Preview {
                             this.edit(w, cx);
                         }
                     }))
-                    .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
-                    .drag_file_out(|drag: &DragOut, cx| {
-                        let png = drag.0.upgrade()?.read(cx).png();
-                        crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)
-                    })
+                    .drag_file_out(cx.weak_entity(), |preview: &Preview, _| preview.png())
                     .child(
                         canvas(
                             |_, _, _| {},

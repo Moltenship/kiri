@@ -3,31 +3,20 @@
 use std::sync::Arc;
 
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::settings::{self, Capture};
+use crate::settings;
+use crate::settings_window::SYSTEM_KEYS;
 
 const STEPS: usize = 3;
 const SCREEN_RECORDING: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
-/// Screen and Area hotkeys next to the system's screenshot keys, and in their place.
+/// Screen and Area hotkeys next to the system's screenshot keys.
 const BESIDE: (&str, &str) = if cfg!(windows) { ("ctrl+shift+1", "ctrl+shift+2") } else { ("shift+cmd+1", "shift+cmd+2") };
-const INSTEAD: (&str, &str) = if cfg!(windows) { ("shift+printscreen", "printscreen") } else { ("shift+cmd+3", "shift+cmd+4") };
-
-struct Open(AnyWindowHandle);
-
-impl Global for Open {}
 
 pub fn open(cx: &mut App) {
-    if let Some(handle) = cx.try_global::<Open>().map(|o| o.0)
-        && handle.update(cx, |_, window, _| window.activate_window()).is_ok()
-    {
-        cx.activate(true);
-        return;
-    }
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(600.), px(500.)), cx))),
         titlebar: Some(TitlebarOptions {
@@ -40,15 +29,13 @@ pub fn open(cx: &mut App) {
         show: true,
         ..Default::default()
     };
-    if let Ok((handle, _)) = crate::open_window(options, cx, |window, cx| cx.new(|cx| Onboarding::new(window, cx))) {
-        cx.set_global(Open(handle));
-    }
+    let _ = crate::open_window(options, cx, |window, cx| cx.new(|cx| Onboarding::new(window, cx)));
     cx.activate(true);
 }
 
 struct Onboarding {
     step: usize,
-    /// `INSTEAD` of the system's screenshot keys; applied by Done.
+    /// `SYSTEM_KEYS` instead of `BESIDE`; applied by Done.
     replace_system: bool,
     screen_access: bool,
     icon: Arc<Image>,
@@ -66,7 +53,7 @@ impl Onboarding {
         let release = cx.on_release(|_, cx| settings::update(cx, |_| {}));
         Self {
             step: 0,
-            replace_system: settings::get(cx).hotkey(Capture::Area).as_deref() == Some(INSTEAD.1),
+            replace_system: false,
             screen_access: crate::mac::has_screen_access(),
             icon: Arc::new(Image::from_bytes(ImageFormat::Png, include_bytes!("icon.png").to_vec())),
             _subscriptions: [activation, release],
@@ -74,24 +61,12 @@ impl Onboarding {
     }
 
     fn finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let replace = self.replace_system;
-        let (screen, area) = if replace { INSTEAD } else { BESIDE };
-        settings::update(cx, |s| {
-            s.hotkeys.insert(Capture::Fullscreen, Some(screen.into()));
-            s.hotkeys.insert(Capture::Area, Some(area.into()));
-        });
-        if replace && let Err(err) = crate::mac::release_screenshot_keys() {
-            let whose = crate::platform_text("the macOS shortcuts", "Snipping Tool on Print Screen");
-            crate::toast::show(format!("Couldn't turn off {whose}: {err}"), cx);
-        }
-        crate::settings_window::refresh_system_shortcuts(cx);
+        let (screen, area) = if self.replace_system { SYSTEM_KEYS } else { BESIDE };
+        crate::settings_window::set_capture_keys((screen, area), cx);
         if let Some(fix) = [screen, area].into_iter().find_map(|keys| crate::settings_window::system_conflict(keys, cx)) {
             crate::toast::with_action(fix, "Open", |cx| cx.open_url(crate::settings_window::KEYBOARD_SETTINGS), cx);
         }
-        for keys in crate::reload_hotkeys(cx) {
-            crate::toast::show(format!("{} is taken by another app", crate::settings_window::pretty(&keys)), cx);
-        }
-        crate::refresh_tray(cx);
+        crate::rebind_hotkeys(cx);
         window.remove_window();
     }
 
@@ -210,7 +185,7 @@ impl Onboarding {
                         "instead",
                         true,
                         crate::platform_text("Instead of macOS", "Instead of Snipping Tool"),
-                        keys(INSTEAD),
+                        keys(SYSTEM_KEYS),
                         crate::platform_text(
                             "Turns off ⇧⌘3 and ⇧⌘4 in macOS, so they open Kiri. ⇧⌘5 stays.",
                             "Turns off Snipping Tool on Print Screen, so it opens Kiri. Win+Shift+S stays.",
@@ -222,13 +197,6 @@ impl Onboarding {
 
     fn look(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme().clone();
-        let login = Switch::new("login").checked(settings::launch_at_login()).on_click(|v, window, cx| {
-            if let Err(err) = settings::set_launch_at_login(*v) {
-                crate::toast::show(format!("Couldn't change login item: {err}"), cx);
-            }
-            crate::refresh_tray(cx);
-            window.refresh();
-        });
         v_flex()
             .items_center()
             .child(div().text_xl().font_semibold().child("Make it yours"))
@@ -244,7 +212,7 @@ impl Onboarding {
                     .bg(theme.group_box)
                     .justify_between()
                     .child(div().text_sm().child("Launch at login"))
-                    .child(login),
+                    .child(crate::settings_window::login_switch()),
             )
             .into_any_element()
     }

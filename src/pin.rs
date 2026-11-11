@@ -8,7 +8,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::{Icon, Sizable, h_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use tray_icon::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 
 use crate::editor::DragFileOut;
 use crate::mac;
@@ -85,19 +85,16 @@ pub fn close_all(cx: &mut App) {
 }
 
 /// Routes context-menu clicks, which arrive through the app-wide menu channel.
-pub fn menu_event(id: &str, cx: &mut App) -> bool {
-    let Some(rest) = id.strip_prefix("pin:") else {
-        return false;
-    };
-    let Some((pin, action)) = rest.split_once(':') else {
-        return true;
+pub fn menu_event(id: &str, cx: &mut App) {
+    let Some((pin, action)) = id.strip_prefix("pin:").and_then(|rest| rest.split_once(':')) else {
+        return;
     };
     let Some((handle, pin)) = pin
         .parse()
         .ok()
         .and_then(|pin: u64| cx.default_global::<Pins>().open.get(&pin).cloned())
     else {
-        return true;
+        return;
     };
     let _ = handle.update(cx, |_, window, cx| pin.update(cx, |pin, cx| match action {
         "edit" => pin.edit(window, cx),
@@ -122,7 +119,6 @@ pub fn menu_event(id: &str, cx: &mut App) -> bool {
             }
         }
     }));
-    true
 }
 
 /// While ⌥ is held, click-through pins take the mouse again, to be moved or turned back.
@@ -227,32 +223,7 @@ impl Pin {
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(id("close"), "Close", true, None),
         ]);
-        if let Some(view) = mac::ns_view_ptr(window) {
-            let at = tray_icon::menu::dpi::LogicalPosition::new(position.x.as_f32() as f64, position.y.as_f32() as f64);
-            // SAFETY: the view belongs to this live window for the whole modal menu loop.
-            #[cfg(target_os = "macos")]
-            unsafe { menu.show_context_menu_for_nsview(view, Some(at.into())) };
-            #[cfg(windows)]
-            unsafe { menu.show_context_menu_for_hwnd(view as isize, Some(at.into())) };
-        }
-    }
-}
-
-fn start_window_move(window: &Window) {
-    #[cfg(windows)]
-    mac::start_window_move(window);
-    #[cfg(not(windows))]
-    window.start_window_move();
-}
-
-#[derive(Clone)]
-struct DragOut(WeakEntity<Pin>);
-
-struct DragGhost;
-
-impl Render for DragGhost {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
+        mac::show_context_menu(window, &menu, position.x.as_f32(), position.y.as_f32());
     }
 }
 
@@ -281,7 +252,7 @@ impl Render for Pin {
             .on_action(cx.listener(|this, _: &CopyAndClose, w, cx| this.copy_and_close(w, cx)))
             .on_action(cx.listener(|this, _: &ClosePin, w, cx| this.close(w, cx)))
             .on_action(cx.listener(|this, _: &EditPin, w, cx| this.edit(w, cx)))
-            .on_mouse_down(MouseButton::Left, |_, window, _| start_window_move(window))
+            .on_mouse_down(MouseButton::Left, |_, window, _| mac::start_window_move(window))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, e: &MouseDownEvent, window, _| this.show_menu(e.position, window)),
@@ -324,11 +295,7 @@ impl Render for Pin {
                             tool("drag", IconName::GripVertical)
                                 .cursor_grab()
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
-                                .drag_file_out(|drag: &DragOut, cx| {
-                                    let png = drag.0.upgrade()?.read(cx).png();
-                                    crate::editor::write_temp(&png, &crate::settings::get(cx).file_name)
-                                }),
+                                .drag_file_out(cx.weak_entity(), |pin: &Pin, _| pin.png()),
                         )
                         .child(tool("edit", IconName::Pencil).on_click(cx.listener(|this, _, w, cx| this.edit(w, cx))))
                         .child(

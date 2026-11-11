@@ -70,8 +70,6 @@ windows = { version = "0.62", features = [
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "3.0.12"
 
-# The spike is only ever built in release: one target tree, no debug info, smaller on disk.
-
 [profile.release]
-debug = false
+# Cargo strips debug info by default, and rust-objcopy in the 1.99 macOS toolchain aborts: it can't find libLLVM.dylib.
 strip = false

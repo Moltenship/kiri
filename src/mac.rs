@@ -381,7 +381,7 @@ fn numbered_cursor(window_pick: bool, numbers: Option<[i32; 2]>) -> Option<objc2
 /// applies the rects a view gives from `resetCursorRects`. The overlay's view gets a subclass
 /// whose rect is ours. The rect covers the screen, so the pointer never enters it: each paint
 /// sets the cursor too.
-pub fn set_screenshot_cursor(window: &Window, window_pick: bool, numbers: Option<[i32; 2]>) -> bool {
+pub fn set_screenshot_cursor(window: &Window, window_pick: bool, numbers: Option<[i32; 2]>) {
     use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
     use std::cell::Cell;
     thread_local! {
@@ -397,7 +397,7 @@ pub fn set_screenshot_cursor(window: &Window, window_pick: bool, numbers: Option
         }
     }
     let (Some(cursor), Some(view)) = (numbered_cursor(window_pick, numbers), ns_view(window)) else {
-        return false;
+        return;
     };
     let current = view.class();
     let class = CLASS.get().filter(|c| *c == current || c.superclass() == Some(current)).or_else(|| {
@@ -407,7 +407,7 @@ pub fn set_screenshot_cursor(window: &Window, window_pick: bool, numbers: Option
         CLASS.set(Some(class));
         Some(class)
     });
-    let Some(class) = class else { return false };
+    let Some(class) = class else { return };
     let swapped = current != class;
     if swapped {
         // SAFETY: the subclass adds no ivars, only an override, so the object layout is unchanged.
@@ -420,7 +420,6 @@ pub fn set_screenshot_cursor(window: &Window, window_pick: bool, numbers: Option
         }
     }
     cursor.set();
-    true
 }
 
 pub fn make_key(window: &Window) {
@@ -435,7 +434,7 @@ pub fn option_held() -> bool {
 
 /// Moves the pointer to global top-left points without posting an event. Re-associating
 /// skips the quarter second the system would otherwise ignore the mouse after a warp.
-pub fn warp_cursor(x: f32, y: f32) {
+pub fn warp_cursor(_display: CGDirectDisplayID, x: f32, y: f32) {
     let _ = CGWarpMouseCursorPosition(CGPoint::new(x as f64, y as f64));
     let _ = CGAssociateMouseAndMouseCursorPosition(true);
 }
@@ -492,8 +491,17 @@ pub fn resize_from_top(window: &Window, w: f32, h: f32) {
     ns_window.setFrame_display(rect, true);
 }
 
-pub fn ns_view_ptr(window: &Window) -> Option<*const std::ffi::c_void> {
-    ns_view(window).map(|v| v as *const NSView as *const std::ffi::c_void)
+/// Shows `menu` at `(x, y)` in the window's points and returns once it closes.
+pub fn show_context_menu(window: &Window, menu: &tray_icon::menu::Menu, x: f32, y: f32) {
+    use tray_icon::menu::ContextMenu;
+    let Some(view) = ns_view(window) else { return };
+    let at = tray_icon::menu::dpi::LogicalPosition::new(x as f64, y as f64);
+    // SAFETY: the view belongs to this live window for the whole modal menu loop.
+    unsafe { menu.show_context_menu_for_nsview(view as *const NSView as *const std::ffi::c_void, Some(at.into())) };
+}
+
+pub fn start_window_move(window: &Window) {
+    window.start_window_move();
 }
 
 #[derive(Clone, Copy)]

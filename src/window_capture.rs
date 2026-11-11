@@ -14,7 +14,7 @@ use objc2_core_foundation::{
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColor, CGColorSpace, CGContext, CGDataProvider, CGDirectDisplayID,
-    CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayMode, CGEvent, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo,
+    CGDisplayBounds, CGDisplayCopyDisplayMode, CGDisplayMode, CGGetDisplaysWithPoint, CGImage, CGImageAlphaInfo, CGImageByteOrderInfo,
     CGRectMakeWithDictionaryRepresentation, CGWindowLevelForKey, CGWindowLevelKey,
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGColorSpaceSRGB, kCGWindowAlpha,
     kCGWindowBounds, kCGWindowLayer, kCGWindowName, kCGWindowNumber, kCGWindowOwnerName,
@@ -43,12 +43,12 @@ pub struct WindowInfo {
 }
 
 /// Normal-layer windows on screen, front to back, without Kiri's own.
-pub async fn list_windows() -> Vec<WindowInfo> {
+pub fn list_windows() -> Vec<WindowInfo> {
     windows().into_iter().map(|(_, w)| w).collect()
 }
 
 /// The focused window of the frontmost app other than Kiri.
-pub async fn frontmost_window() -> Option<WindowInfo> {
+pub fn frontmost_window() -> Option<WindowInfo> {
     let front = NSWorkspace::sharedWorkspace()
         .frontmostApplication()
         .map(|app| app.processIdentifier());
@@ -217,7 +217,7 @@ async fn capture_image(
 
 /// The desktop picture of the display under the pointer, whole and at its pixel size.
 pub async fn desktop_picture() -> Option<Shot> {
-    let display = display_at(CGEvent::location(CGEvent::new(None).as_deref()));
+    let display = crate::mac::display_under_cursor();
     let content = shareable_content().await?;
     let size = CGDisplayBounds(display).size;
     let scale = CGDisplayMode::pixel_width(CGDisplayCopyDisplayMode(display).as_deref()) as f64 / size.width;

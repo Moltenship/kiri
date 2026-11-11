@@ -37,14 +37,15 @@ const UP: u16 = 126;
 #[derive(Default)]
 struct Session {
     windows: Vec<AnyWindowHandle>,
-    last_area: Option<(u32, PxRect)>,
+    /// The display and global rect of the last area capture, for Repeat Area.
+    last_area: Option<(u32, (f32, f32, f32, f32))>,
     /// The editor window that asked for this capture with Add Capture.
     add_to: Option<AnyWindowHandle>,
 }
 
 impl Global for Session {}
 
-pub fn last_area(cx: &App) -> Option<(u32, PxRect)> {
+pub fn last_area(cx: &App) -> Option<(u32, (f32, f32, f32, f32))> {
     cx.try_global::<Session>().and_then(|s| s.last_area)
 }
 
@@ -145,7 +146,7 @@ impl Overlay {
         focus: FocusHandle,
     ) -> Self {
         let scale = shot.as_ref().map_or(1., |s| s.scale);
-        let image = shot.map(|s| TiledImage::from_bgra(s.width, s.height, &s.bgra, (s.width * 4) as usize));
+        let image = shot.map(|s| TiledImage::from_bgra(s.width, s.height, &s.bgra));
         Self {
             display,
             origin: mac::display_origin(display),
@@ -229,7 +230,7 @@ impl Overlay {
         let Some(c) = self.cursor else { return };
         let (w, h) = self.size;
         let to = point(px((c.x.as_f32() + dx).clamp(0., w - 1.)), px((c.y.as_f32() + dy).clamp(0., h - 1.)));
-        mac::warp_cursor(self.origin.0 + to.x.as_f32(), self.origin.1 + to.y.as_f32());
+        mac::warp_cursor(self.display, self.origin.0 + to.x.as_f32(), self.origin.1 + to.y.as_f32());
         self.track(to, cx);
     }
 
@@ -275,7 +276,7 @@ impl Overlay {
             let px = |v: f32| (v * s).round().max(0.) as u32;
             let (px_x, px_y) = (px(x).min(image.width - 1), px(y).min(image.height - 1));
             let rect = PxRect { x: px_x, y: px_y, w: px(w).min(image.width - px_x), h: px(h).min(image.height - px_y) };
-            (rect, image.read(rect))
+            mac::Shot { display, width: rect.w, height: rect.h, scale: s, bgra: image.read(rect) }
         });
         // App-level defer: a window can't be updated from inside its own `window.defer`.
         cx.defer(move |cx| {
@@ -285,7 +286,7 @@ impl Overlay {
                 return crate::scrolling::start(global, display, up, cx);
             }
             match frozen {
-                Some((rect, bgra)) => finish_area(mode, display, rect, bgra, s, add_to, cx),
+                Some(shot) => finish_area(mode, global, shot, add_to, cx),
                 None => cx
                     .spawn(async move |cx| {
                         // Lets the window server drop the overlay before the frame is taken.
@@ -293,9 +294,7 @@ impl Overlay {
                         let Some(shot) = mac::capture_area(display, global).await else {
                             return cx.update(|cx| crate::toast::show("Couldn't capture the screen", cx));
                         };
-                        let at = |v: f32| (v * shot.scale).round().max(0.) as u32;
-                        let rect = PxRect { x: at(x), y: at(y), w: shot.width, h: shot.height };
-                        cx.update(|cx| finish_area(mode, display, rect, shot.bgra, shot.scale, add_to, cx));
+                        cx.update(|cx| finish_area(mode, global, shot, add_to, cx));
                     })
                     .detach(),
             }
@@ -312,13 +311,7 @@ impl Overlay {
             cx.spawn(async move |cx| {
                 let shot = crate::window_capture::capture(id, background, color).await;
                 cx.update(|cx| match shot {
-                    Some(shot) => match add_to {
-                        Some(editor) => {
-                            let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra, (shot.width * 4) as usize);
-                            crate::editor::add_capture(editor, image, shot.scale, cx)
-                        }
-                        None => crate::deliver_shot(shot, cx),
-                    },
+                    Some(shot) => hand_over(shot, add_to, cx),
                     None => crate::toast::show("Couldn't capture that window", cx),
                 });
             })
@@ -327,20 +320,22 @@ impl Overlay {
     }
 }
 
-/// `rect` is where `bgra` sits on its display, remembered for Repeat Area.
-fn finish_area(mode: Mode, display: u32, rect: PxRect, bgra: Vec<u8>, scale: f32, add_to: Option<AnyWindowHandle>, cx: &mut App) {
-    let (w, h) = (rect.w, rect.h);
-    match mode {
-        Mode::Text => crate::ocr::recognize_and_copy(bgra, w, h, cx),
-        _ => {
-            cx.global_mut::<Session>().last_area = Some((display, rect));
-            let image = TiledImage::from_bgra(w, h, &bgra, (w * 4) as usize);
-            drop(bgra);
-            match add_to {
-                Some(editor) => crate::editor::add_capture(editor, image, scale, cx),
-                None => crate::deliver(image, scale, Some(display), cx),
-            }
+/// `area` is where the shot was taken, in global points.
+fn finish_area(mode: Mode, area: (f32, f32, f32, f32), shot: mac::Shot, add_to: Option<AnyWindowHandle>, cx: &mut App) {
+    if mode == Mode::Text {
+        return crate::ocr::recognize_and_copy(shot.bgra, shot.width, shot.height, cx);
+    }
+    cx.global_mut::<Session>().last_area = Some((shot.display, area));
+    hand_over(shot, add_to, cx);
+}
+
+fn hand_over(shot: mac::Shot, add_to: Option<AnyWindowHandle>, cx: &mut App) {
+    match add_to {
+        Some(editor) => {
+            let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra);
+            crate::editor::add_capture(editor, image, shot.scale, cx)
         }
+        None => crate::deliver_shot(shot, cx),
     }
 }
 

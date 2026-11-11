@@ -49,18 +49,6 @@ actions!(
         Confirm,
         Cancel,
         SelectAll,
-        ToolSelect,
-        ToolArrow,
-        ToolText,
-        ToolRect,
-        ToolOval,
-        ToolLine,
-        ToolPen,
-        ToolHighlighter,
-        ToolCounter,
-        ToolRedact,
-        ToolSpotlight,
-        ToolMagnifier,
         ZoomIn,
         ZoomOut,
         ZoomFit,
@@ -83,6 +71,10 @@ actions!(
     ]
 );
 
+#[derive(Clone, PartialEq, Action)]
+#[action(namespace = editor, no_json)]
+struct SetTool(Tool);
+
 fn editor_in(window: AnyWindowHandle, cx: &App) -> Option<Entity<Editor>> {
     let root = window.downcast::<gpui_kit::base::Root>()?.read(cx).ok()?;
     root.view().clone().downcast::<Editor>().ok()
@@ -98,19 +90,19 @@ pub fn add_capture(window: AnyWindowHandle, image: TiledImage, scale: f32, cx: &
     });
 }
 
-const TOOL_ACTIONS: [(Tool, fn() -> Box<dyn Action>); 12] = [
-    (Tool::Select, || Box::new(ToolSelect)),
-    (Tool::Arrow, || Box::new(ToolArrow)),
-    (Tool::Text, || Box::new(ToolText)),
-    (Tool::Rect, || Box::new(ToolRect)),
-    (Tool::Oval, || Box::new(ToolOval)),
-    (Tool::Line, || Box::new(ToolLine)),
-    (Tool::Pen, || Box::new(ToolPen)),
-    (Tool::Highlighter, || Box::new(ToolHighlighter)),
-    (Tool::Counter, || Box::new(ToolCounter)),
-    (Tool::Redact, || Box::new(ToolRedact)),
-    (Tool::Spotlight, || Box::new(ToolSpotlight)),
-    (Tool::Magnifier, || Box::new(ToolMagnifier)),
+const TOOLS: [Tool; 12] = [
+    Tool::Select,
+    Tool::Arrow,
+    Tool::Text,
+    Tool::Rect,
+    Tool::Oval,
+    Tool::Line,
+    Tool::Pen,
+    Tool::Highlighter,
+    Tool::Counter,
+    Tool::Redact,
+    Tool::Spotlight,
+    Tool::Magnifier,
 ];
 
 /// Asks once, since ⌘Q out of habit would otherwise kill the hotkeys along with the window.
@@ -222,14 +214,9 @@ pub fn bind_keys(cx: &mut App) {
         keys.push(KeyBinding::new("ctrl-y", Redo, base));
         keys.push(KeyBinding::new("f11", EnterFullScreen, base));
     }
-    macro_rules! tool_keys {
-        ($($tool:ident => $action:ident),*) => {
-            $(keys.push(KeyBinding::new(Tool::$tool.key(), $action, tools));)*
-        };
+    for tool in TOOLS {
+        keys.push(KeyBinding::new(tool.key(), SetTool(tool), tools));
     }
-    tool_keys!(Select => ToolSelect, Arrow => ToolArrow, Text => ToolText, Rect => ToolRect,
-        Oval => ToolOval, Line => ToolLine, Pen => ToolPen, Highlighter => ToolHighlighter,
-        Counter => ToolCounter, Redact => ToolRedact, Spotlight => ToolSpotlight, Magnifier => ToolMagnifier);
     crate::bind_keys(cx, keys);
 }
 
@@ -245,9 +232,8 @@ const GRAB: f32 = 5.;
 /// How close an edge must come to a snap line, in screen points.
 const SNAP: f32 = 5.;
 
-actions!(kiri, [OpenSettings, Quit, OpenFile, OpenClipboard, CloseAll]);
-// A placeholder: AppKit takes the item over (see `mac::adopt_full_screen_item`).
-actions!(kiri, [EnterFullScreen]);
+// On macOS EnterFullScreen is a placeholder: AppKit takes the item over (see `mac::adopt_full_screen_item`).
+actions!(kiri, [OpenSettings, Quit, OpenFile, OpenClipboard, CloseAll, EnterFullScreen]);
 
 /// Editors make Kiri a regular app with a menu bar; with none open it goes back to the tray.
 #[derive(Default)]
@@ -286,13 +272,7 @@ fn app_menus() -> Vec<Menu> {
             MenuItem::action("Reset Crop", ResetCrop),
             MenuItem::action("Rasterize Annotations", Rasterize),
         ]),
-        Menu::new("Draw").items(TOOL_ACTIONS.iter().map(|(tool, action)| MenuItem::Action {
-            name: tool.name().into(),
-            action: action(),
-            os_action: None,
-            checked: false,
-            disabled: false,
-        }).chain([MenuItem::action("Backdrop", ToggleBackdrop), MenuItem::action("Add Capture", AddCapture)])),
+        Menu::new("Draw").items(TOOLS.into_iter().map(|tool| MenuItem::action(tool.name(), SetTool(tool))).chain([MenuItem::action("Backdrop", ToggleBackdrop), MenuItem::action("Add Capture", AddCapture)])),
         Menu::new("Zoom").items([
             MenuItem::action("Zoom In", ZoomIn),
             MenuItem::action("Zoom Out", ZoomOut),
@@ -352,12 +332,12 @@ pub struct Document {
 
 pub fn reopen(doc: Document, cx: &mut App) {
     let Document { image, scale, objects, crop, file, saved_to, backdrop } = doc;
-    open_with(image, scale, None, cx, move |editor, window, cx| {
+    open_with(image, scale, None, cx, move |editor, _, cx| {
         let snapshot = Snapshot { image: editor.image.clone(), objects, crop };
         editor.restore(snapshot);
         editor.file = file;
         editor.saved_to = saved_to;
-        editor.set_backdrop(backdrop.map(|b| crate::backdrop::Backdrop { panel_open: false, ..b }), window, cx);
+        editor.set_backdrop(backdrop, cx);
     });
 }
 
@@ -464,13 +444,6 @@ enum Drag {
     Text,
 }
 
-
-#[derive(Clone, Copy, PartialEq)]
-enum Axis {
-    Horizontal,
-    Vertical,
-}
-
 /// The visible image with every pixel repeated `factor` times, so high zoom shows crisp pixels:
 /// GPUI only samples textures linearly.
 struct Crisp {
@@ -528,7 +501,7 @@ fn crisp_image(image: &TiledImage, view: View, bounds: Bounds<Pixels>, mag: f32,
 /// What a cached patch was built from; a mismatch rebuilds it.
 #[derive(PartialEq)]
 enum Source {
-    Pixels(doc::PixelOp, [i32; 4]),
+    Pixels(doc::PixelOp, R),
     Highlight(u64),
     Image(*const doc::BitmapData, u32),
 }
@@ -537,17 +510,6 @@ struct CachedPatch {
     key: Source,
     at: R,
     image: Arc<RenderImage>,
-}
-
-#[derive(Clone)]
-struct DragOut(WeakEntity<Editor>);
-
-struct DragGhost;
-
-impl Render for DragGhost {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
-    }
 }
 
 pub struct Editor {
@@ -573,10 +535,11 @@ pub struct Editor {
     unit_px: bool,
     text_lines: Option<Rc<[R]>>,
     contrast: Cell<Option<(PxRect, Option<(u32, u32)>)>>,
-    /// How many of `TOOL_ACTIONS` fit in the toolbar at the last layout.
+    /// How many of `TOOLS` fit in the toolbar at the last layout.
     shown_tools: Rc<Cell<usize>>,
     props_collapsed: bool,
-    finding_text: bool,
+    /// The OCR behind `text_lines`; dropping it cancels a run on pixels that are gone.
+    text_task: Option<Task<()>>,
     zoom: Option<f32>,
     pan: Point<Pixels>,
     canvas_bounds: Rc<Cell<Bounds<Pixels>>>,
@@ -606,10 +569,6 @@ pub struct Editor {
     _subscriptions: Vec<Subscription>,
 }
 
-fn measure(text: &str, size: f32, bold: bool) -> f32 {
-    mac::text_width(text, size, bold)
-}
-
 /// Moves the selection by `d`, kept inside the canvas. It can be larger than the canvas
 /// after an undo shrinks it, and then it stays pinned to the top-left.
 fn slide(r: R, d: P, c: R) -> R {
@@ -623,7 +582,7 @@ fn label_point(o: &Object, text: &str, r: R, i: usize) -> P {
     let (pad_x, pad_y) = o.label_padding();
     let s = te::line_start(text, i);
     let line = text[..s].matches('\n').count();
-    let x = r.x + pad_x + measure(&text[s..i], o.size, o.variant == 0);
+    let x = r.x + pad_x + mac::text_width(&text[s..i], o.size, o.variant == 0);
     (x, r.y + pad_y + line as f32 * o.size * doc::LINE_HEIGHT)
 }
 
@@ -711,9 +670,9 @@ impl Editor {
             unit_px: settings::get(cx).unit_px,
             text_lines: None,
             contrast: Cell::new(None),
-            shown_tools: Rc::new(Cell::new(TOOL_ACTIONS.len())),
+            shown_tools: Rc::new(Cell::new(TOOLS.len())),
             props_collapsed: false,
-            finding_text: false,
+            text_task: None,
             zoom: None,
             pan: Point::default(),
             canvas_bounds: Rc::default(),
@@ -743,7 +702,7 @@ impl Editor {
 
     fn ctx(&self) -> Ctx<'static> {
         Ctx {
-            measure: &measure,
+            measure: &mac::text_width,
             scale: self.scale,
             unit_px: self.unit_px,
             text: self.text_lines.clone(),
@@ -795,6 +754,11 @@ impl Editor {
         }
     }
 
+    fn size_label(&self, r: R) -> String {
+        let (unit, name) = if self.unit_px { (1., "px") } else { (self.scale, "pt") };
+        format!("{}×{} {name}", (r.w / unit).round(), (r.h / unit).round())
+    }
+
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             image: self.image.clone(),
@@ -805,14 +769,26 @@ impl Editor {
 
     /// Grown canvas is filled with the background of what's left after cropping, as in the alternative.
     fn refresh_fill(&mut self) {
-        let b = self.base().round_out();
-        let r = PxRect { x: b.x as u32, y: b.y as u32, w: b.w as u32, h: b.h as u32 };
-        self.fill = pixels::background_color(&self.image, r);
+        self.fill = pixels::clamp(&self.image, self.base()).and_then(|r| pixels::background_color(&self.image, r));
+    }
+
+    /// Drops everything derived from pixels the image no longer has.
+    fn image_changed(&mut self) {
+        let mut stale = self.stale.borrow_mut();
+        stale.extend(self.crisp.borrow_mut().take().map(|c| c.image));
+        stale.extend(self.patches.borrow_mut().drain().map(|(_, p)| p.image));
+        self.text_lines = None;
+        self.text_task = None;
+        self.contrast.set(None);
     }
 
     fn restore(&mut self, s: Snapshot) {
-        let refill = s.crop != self.crop || !s.image.same_pixels(&self.image);
+        let repainted = !s.image.same_pixels(&self.image);
+        let refill = s.crop != self.crop || repainted;
         self.image = s.image;
+        if repainted {
+            self.image_changed();
+        }
         self.objects = s.objects;
         // A reopened document brings its own ids; new objects must not reuse them.
         self.next_id = self.next_id.max(self.objects.iter().map(|o| o.id + 1).max().unwrap_or(1));
@@ -840,7 +816,11 @@ impl Editor {
         let Some(before) = self.pending.take() else {
             return;
         };
-        let refill = before.crop != self.crop || !before.image.same_pixels(&self.image);
+        let repainted = !before.image.same_pixels(&self.image);
+        if repainted {
+            self.image_changed();
+        }
+        let refill = before.crop != self.crop || repainted;
         if refill {
             self.refresh_fill();
         }
@@ -904,31 +884,16 @@ impl Editor {
             .unwrap_or_else(|| tool.default_style())
     }
 
-    /// The tool whose style the property bar shows: the selected object's, or the active tool's.
-    fn styled_tool(&self) -> Option<Tool> {
+    /// The tool and style the property bar shows: the selected object's, or the active tool's.
+    fn styled(&self) -> Option<(Tool, Style)> {
         match self.selected.and_then(|id| self.object(id)) {
-            Some(o) => o.shape.tool(),
-            None => Some(self.tool),
+            Some(o) => Some((o.shape.tool()?, Style { color: o.color, size: o.size / self.scale, variant: o.variant })),
+            None => Some((self.tool, self.style(self.tool))),
         }
-    }
-
-    fn current_style(&self) -> Option<Style> {
-        if let Some(o) = self.selected.and_then(|id| self.object(id)) {
-            o.shape.tool()?;
-            return Some(Style {
-                color: o.color,
-                size: o.size / self.scale,
-                variant: o.variant,
-            });
-        }
-        Some(self.style(self.tool))
     }
 
     fn apply_style(&mut self, f: impl Fn(&mut Style), cx: &mut Context<Self>) {
-        let Some(tool) = self.styled_tool() else {
-            return;
-        };
-        let Some(mut style) = self.current_style() else {
+        let Some((tool, mut style)) = self.styled() else {
             return;
         };
         f(&mut style);
@@ -947,7 +912,7 @@ impl Editor {
     }
 
     fn set_size_fraction(&mut self, t: f32, cx: &mut Context<Self>) {
-        let Some((lo, hi, _)) = self.styled_tool().and_then(|t| t.size_range()) else {
+        let Some((lo, hi, _)) = self.styled().and_then(|(t, _)| t.size_range()) else {
             return;
         };
         let size = lo + (hi - lo) * t * t;
@@ -955,7 +920,7 @@ impl Editor {
     }
 
     fn sync_slider(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (Some(tool), Some(style)) = (self.styled_tool(), self.current_style()) else {
+        let Some((tool, style)) = self.styled() else {
             return;
         };
         if let Some((lo, hi, _)) = tool.size_range() {
@@ -988,25 +953,22 @@ impl Editor {
         compute_view(self.canvas_bounds.get(), self.view_area(), self.scale, self.zoom, self.pan)
     }
 
-    /// Centers `p` at 1600%, close enough to place a selection corner on an exact pixel.
-    fn inspect(&mut self, p: P, cx: &mut Context<Self>) {
-        let b = self.canvas_bounds.get();
-        let k = 16. / self.scale;
-        let centered = centered_origin(b, self.view_area(), k);
-        let c = b.center();
-        self.pan = point(c.x - px(p.0 * k) - centered.x, c.y - px(p.1 * k) - centered.y);
+    /// Zooms to `k` with image point `p` under the screen point `at`.
+    fn zoom_to(&mut self, k: f32, p: P, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let centered = centered_origin(self.canvas_bounds.get(), self.view_area(), k);
+        self.pan = point(at.x - px(p.0 * k) - centered.x, at.y - px(p.1 * k) - centered.y);
         self.zoom = Some(k);
         cx.notify();
     }
 
+    /// Centers `p` at 1600%, close enough to place a selection corner on an exact pixel.
+    fn inspect(&mut self, p: P, cx: &mut Context<Self>) {
+        self.zoom_to(16. / self.scale, p, self.canvas_bounds.get().center(), cx);
+    }
+
     fn zoom_at(&mut self, k: f32, anchor: Point<Pixels>, cx: &mut Context<Self>) {
-        let k = k.clamp(0.02, 32. / self.scale);
         let p = self.view().to_image(anchor);
-        let centered = centered_origin(self.canvas_bounds.get(), self.view_area(), k);
-        let origin = point(anchor.x - px(p.0 * k), anchor.y - px(p.1 * k));
-        self.pan = point(origin.x - centered.x, origin.y - centered.y);
-        self.zoom = Some(k);
-        cx.notify();
+        self.zoom_to(k.clamp(0.02, 32. / self.scale), p, anchor, cx);
     }
 
     fn step_zoom(&mut self, factor: f32, cx: &mut Context<Self>) {
@@ -1024,15 +986,14 @@ impl Editor {
         cx.notify();
     }
 
+    fn fit_to(&mut self, area: R, scale: f32, cx: &mut Context<Self>) {
+        let b = self.canvas_bounds.get();
+        self.zoom_to(fit_k(b, area, scale), area.center(), b.center(), cx);
+    }
+
     /// Zoom to Fit also takes in annotations past the image edge.
     fn fit_all(&mut self, cx: &mut Context<Self>) {
-        let b = self.canvas_bounds.get();
-        let (all, area) = (self.outer(), self.view_area());
-        let k = fit_k(b, all, self.scale);
-        let (target, centered) = (centered_origin(b, all, k), centered_origin(b, area, k));
-        self.zoom = Some(k);
-        self.pan = point(target.x - centered.x, target.y - centered.y);
-        cx.notify();
+        self.fit_to(self.outer(), self.scale, cx);
     }
 
     // ---- output ---------------------------------------------------------
@@ -1044,7 +1005,7 @@ impl Editor {
         let pixmap = match &self.backdrop {
             Some(b) if region.is_none() => {
                 let inner = self.render_scene(canvas, &ctx, objects);
-                b.compose(&inner, canvas, self.scale, &self.image)
+                b.compose(inner, canvas, self.scale)
             }
             _ => {
                 let area = region.map_or(canvas, |r| r.intersect(&canvas).unwrap_or(canvas).round_out());
@@ -1231,11 +1192,6 @@ impl Editor {
         .detach();
     }
 
-
-    fn export_temp(&self, cx: &App) -> Option<PathBuf> {
-        write_temp(&self.png(cx), &settings::get(cx).file_name)
-    }
-
     fn pin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finish_text();
         let pixmap = self.render_pixmap(self.selection, &self.objects);
@@ -1244,7 +1200,7 @@ impl Editor {
         for p in bgra.chunks_exact_mut(4) {
             p.swap(0, 2);
         }
-        let image = TiledImage::from_bgra(w, h, &bgra, (w * 4) as usize);
+        let image = TiledImage::from_bgra(w, h, &bgra);
         drop(bgra);
         let origin = window.bounds().origin;
         let doc = Document {
@@ -1291,13 +1247,7 @@ impl Editor {
     // ---- selection (crop) -----------------------------------------------
 
     fn selection_px(&self) -> Option<PxRect> {
-        let r = self.selection?.intersect(&self.image_rect())?.round_out();
-        (r.w >= 1. && r.h >= 1.).then(|| PxRect {
-            x: r.x as u32,
-            y: r.y as u32,
-            w: r.w as u32,
-            h: r.h as u32,
-        })
+        pixels::clamp(&self.image, self.selection?)
     }
 
     fn crop_to_selection(&mut self, cx: &mut Context<Self>) {
@@ -1318,11 +1268,10 @@ impl Editor {
 
     /// Crops to the content, so the backdrop's inset sits evenly around it.
     pub fn recenter(&mut self, cx: &mut Context<Self>) {
-        let Some(b) = self.base().intersect(&self.image_rect()).map(|r| r.round_out()) else { return };
-        let r = pixels::autoadjust(&self.image, PxRect { x: b.x as u32, y: b.y as u32, w: b.w as u32, h: b.h as u32 });
-        let r = R::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let Some(b) = pixels::clamp(&self.image, self.base()) else { return };
+        let r = pixels::autoadjust(&self.image, b);
         if r != b {
-            self.edit_doc(|this| this.crop = Some(r));
+            self.edit_doc(|this| this.crop = Some(R::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32)));
             self.fit(cx);
         }
     }
@@ -1446,7 +1395,7 @@ impl Editor {
         let cmd = m.platform || cfg!(windows) && m.control;
         let (word, line) = if cfg!(windows) { (m.control, false) } else { (m.alt, m.platform) };
         let (sel, c, t) = (edit.selection(), edit.caret, text.as_str());
-        let width = |s: &str| measure(s, size, bold);
+        let width = |s: &str| mac::text_width(s, size, bold);
         match k.key.as_str() {
             "enter" if cmd => {
                 self.finish_text();
@@ -1554,7 +1503,7 @@ impl Editor {
         let line = (((p.1 - r.y - pad_y) / (o.size * doc::LINE_HEIGHT)).max(0.) as usize).min(lines - 1);
         let s = text.split('\n').take(line).map(|l| l.len() + 1).sum::<usize>();
         let bold = o.variant == 0;
-        Some(s + te::index_at(&text[s..te::line_end(text, s)], p.0 - r.x - pad_x, |l| measure(l, o.size, bold)))
+        Some(s + te::index_at(&text[s..te::line_end(text, s)], p.0 - r.x - pad_x, |l| mac::text_width(l, o.size, bold)))
     }
 
     // ---- pointer --------------------------------------------------------
@@ -1763,7 +1712,6 @@ impl Editor {
                 return;
             }
         };
-        let _ = shift;
         self.begin();
         let id = self.add(shape, style);
         self.selected = Some(id);
@@ -1860,7 +1808,10 @@ impl Editor {
                         SelGrab::Move => {
                             slide(sel, (p.0 - last.0, p.1 - last.1), canvas)
                         }
-                        SelGrab::Handle(i) => resize_box(sel, i, (p.0 - off.0, p.1 - off.1)).intersect(&canvas).unwrap_or(sel),
+                        SelGrab::Handle(i) => {
+                            let (a, b) = doc::resize_box(sel, i, (p.0 - off.0, p.1 - off.1));
+                            R::from_points(a, b).intersect(&canvas).unwrap_or(sel)
+                        }
                     };
                     self.selection = Some(next);
                     *last = p;
@@ -1987,7 +1938,6 @@ impl Editor {
             }
             _ => return,
         }
-        let _ = window;
         cx.notify();
     }
 
@@ -2016,10 +1966,8 @@ impl Editor {
             }
         } else if self.selection.is_some() {
             self.selection = None;
-        } else if self.backdrop.as_ref().is_some_and(|b| b.panel_open) {
-            if let Some(b) = &mut self.backdrop {
-                b.panel_open = false;
-            }
+        } else if self.backdrop_panel.is_some() {
+            self.backdrop_panel = None;
         } else {
             let s = settings::get(cx);
             let (copy, save) = (s.esc_copies, s.esc_saves);
@@ -2081,13 +2029,10 @@ impl Editor {
     }
 
     fn drop_files(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
-        let image = paths.paths().iter().find_map(|p| std::fs::read(p).ok().and_then(|b| crate::export::decode_rgba(&b)));
-        let Some((w, h, mut bgra, ppp)) = image else {
+        let image = paths.paths().iter().find_map(|p| std::fs::read(p).ok().and_then(|b| export::decode_bgra(&b)));
+        let Some((w, h, bgra, ppp)) = image else {
             return self.show_toast("Couldn't open that image", None, cx);
         };
-        for p in bgra.chunks_exact_mut(4) {
-            p.swap(0, 2);
-        }
         let at = self.view().to_image(window.mouse_position());
         self.insert_image(w, h, bgra, ppp, Some(at), window, cx);
     }
@@ -2128,13 +2073,12 @@ impl Editor {
             p.swap(0, 2);
         }
         self.edit_doc(|this| {
-            this.image = TiledImage::from_bgra(w, h, &bgra, (w * 4) as usize);
+            this.image = TiledImage::from_bgra(w, h, &bgra);
             this.objects = Rc::default();
             this.crop = None;
         });
         self.selected = None;
         self.selection = None;
-        self.patches.borrow_mut().clear();
         // Like the alternative, Resize keeps the zoom; it only recenters the smaller or larger image.
         if resized {
             self.zoom = Some(k);
@@ -2233,7 +2177,6 @@ impl Editor {
         }
     }
 
-    /// Walks out from the cursor along `axis` until the color changes.
     fn hold_ruler(&mut self, axis: Axis) {
         if !self.ruler.contains(&axis) {
             self.ruler.push(axis);
@@ -2244,6 +2187,7 @@ impl Editor {
         self.ruler.iter().filter_map(|&axis| self.ruler_measure(axis)).collect()
     }
 
+    /// Walks out from the cursor along `axis` until the color changes.
     fn ruler_measure(&self, axis: Axis) -> Option<(P, P)> {
         let p = self.cursor?;
         let (x, y) = (p.0.floor() as i64, p.1.floor() as i64);
@@ -2285,19 +2229,18 @@ impl Editor {
 
     // ---- patches --------------------------------------------------------
 
-    /// Text-only redaction needs line boxes; OCR runs once, on first use.
+    /// Text-only redaction needs line boxes; OCR runs once per image, on first use.
     fn find_text_if_needed(&mut self, cx: &mut Context<Self>) {
-        let text_mode = |tool: Tool, variant: u8| tool == Tool::Redact && matches!(variant, 1 | 3);
-        if self.finding_text
-            || !(text_mode(self.tool, self.style(self.tool).variant)
-                || self.objects.iter().any(|o| o.shape.tool() == Some(Tool::Redact) && matches!(o.variant, 1 | 3)))
+        let text_mode = |tool: Option<Tool>, variant: u8| tool == Some(Tool::Redact) && matches!(variant, 1 | 3);
+        if self.text_task.is_some()
+            || !(text_mode(Some(self.tool), self.style(self.tool).variant)
+                || self.objects.iter().any(|o| text_mode(o.shape.tool(), o.variant)))
         {
             return;
         }
-        self.finding_text = true;
         let full = self.image.full();
         let bgra = self.image.read(full);
-        cx.spawn(async move |this, cx| {
+        self.text_task = Some(cx.spawn(async move |this, cx| {
             let boxes = cx
                 .background_executor()
                 .spawn(async move { crate::ocr::text_boxes(&bgra, full.w, full.h) })
@@ -2307,8 +2250,7 @@ impl Editor {
                 this.text_lines = Some(boxes.into_iter().map(|(x, y, w, h)| R::new(x, y, w, h)).collect());
                 cx.notify();
             });
-        })
-        .detach();
+        }));
     }
 
     /// Brings cached pixel patches up to date with the objects that need them.
@@ -2317,23 +2259,23 @@ impl Editor {
         let mut stale = self.stale.borrow_mut();
         let ctx = self.ctx();
         let mut alive = Vec::new();
-        for o in self.objects.iter() {
-            for prim in o.prims(&ctx) {
-                if let Prim::Image { key, src, alpha, .. } = &prim {
-                    // Textures depend only on the pixels and opacity; GPUI scales them.
-                    let fresh = Source::Image(Arc::as_ptr(&src.0), alpha.to_bits());
-                    alive.push(*key);
-                    if !cache.get(key).is_some_and(|c| c.key == fresh) {
-                        let image = Arc::new(crate::tiled::frame_image(src.0.w, src.0.h, straight(&src.0.bgra, *alpha)));
-                        let at = R::default();
-                        if let Some(old) = cache.insert(*key, CachedPatch { key: fresh, at, image }) {
-                            stale.push(old.image);
-                        }
-                    }
-                    continue;
-                }
-                if let Prim::Highlight { key, path, width, color, rect } = &prim {
-                    alive.push(*key);
+        let mut keep = |key: u64, fresh: Source, build: &dyn Fn() -> Option<pixels::Patch>| {
+            alive.push(key);
+            if cache.get(&key).is_some_and(|c| c.key == fresh) {
+                return;
+            }
+            if let Some(patch) = build() {
+                let image = Arc::new(crate::tiled::frame_image(patch.w, patch.h, patch.bgra));
+                stale.extend(cache.insert(key, CachedPatch { key: fresh, at: patch.at, image }).map(|old| old.image));
+            }
+        };
+        for prim in self.objects.iter().flat_map(|o| o.prims(&ctx)) {
+            match &prim {
+                // Textures depend only on the pixels and opacity; GPUI scales them.
+                Prim::Image { key, src, alpha, .. } => keep(*key, Source::Image(Arc::as_ptr(&src.0), alpha.to_bits()), &|| {
+                    Some(pixels::Patch { at: R::default(), w: src.0.w, h: src.0.h, bgra: straight(&src.0.bgra, *alpha) })
+                }),
+                Prim::Highlight { key, path, width, color, rect } => {
                     let mut h = std::hash::DefaultHasher::new();
                     for seg in path {
                         let (a, b, c) = match *seg {
@@ -2345,52 +2287,16 @@ impl Editor {
                         h.write(&[a.0, a.1, b.0, b.1, c.0, c.1].map(f32::to_bits).map(u32::to_le_bytes).concat());
                     }
                     h.write(&[width.to_bits(), *color, self.fill.unwrap_or(u32::MAX)].map(u32::to_le_bytes).concat());
-                    let fresh = Source::Highlight(h.finish());
-                    if !cache.get(key).is_some_and(|c| c.key == fresh)
-                        && let Some(patch) = export::highlight_patch(&self.image, self.fill, path, *width, *color, *rect)
-                    {
-                        let image = Arc::new(crate::tiled::frame_image(patch.w, patch.h, patch.bgra));
-                        if let Some(old) = cache.insert(*key, CachedPatch { key: fresh, at: patch.at, image }) {
-                            stale.push(old.image);
-                        }
-                    }
-                    continue;
+                    keep(*key, Source::Highlight(h.finish()), &|| export::highlight_patch(&self.image, self.fill, path, *width, *color, *rect));
                 }
-                let Prim::Pixels { key, op, rect } = prim else {
-                    continue;
-                };
-                alive.push(key);
-                let r = rect.round_out();
-                let src = match op {
-                    doc::PixelOp::Lens { src, .. } => src.round_out(),
-                    _ => R::default(),
-                };
-                let geometry = [r.x as i32 ^ ((src.x as i32) << 16), r.y as i32 ^ ((src.y as i32) << 16), r.w as i32 ^ ((src.w as i32) << 16), r.h as i32];
-                let fresh = Source::Pixels(op, geometry);
-                if cache.get(&key).is_some_and(|c| c.key == fresh) {
-                    continue;
-                }
-                if let Some(patch) = pixels::patch(&self.image, op, rect) {
-                    let image = Arc::new(crate::tiled::frame_image(patch.w, patch.h, patch.bgra));
-                    if let Some(old) = cache.insert(
-                        key,
-                        CachedPatch {
-                            key: fresh,
-                            at: patch.at,
-                            image,
-                        },
-                    ) {
-                        stale.push(old.image);
-                    }
-                }
+                Prim::Pixels { key, op, rect } => keep(*key, Source::Pixels(*op, rect.round_out()), &|| pixels::patch(&self.image, *op, *rect)),
+                _ => {}
             }
         }
-        let dead: Vec<u64> = cache.keys().filter(|k| !alive.contains(k)).copied().collect();
-        for k in dead {
-            if let Some(old) = cache.remove(&k) {
-                stale.push(old.image);
-            }
-        }
+        cache.retain(|key, patch| alive.contains(key) || {
+            stale.push(patch.image.clone());
+            false
+        });
     }
 }
 
@@ -2468,12 +2374,22 @@ pub fn write_temp(png: &[u8], name: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+struct DragGhost;
+
+impl Render for DragGhost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
+
 pub trait DragFileOut: StatefulInteractiveElement + Sized {
-    /// Offers the file `path` writes to other apps once a drag of `T` leaves the window.
-    fn drag_file_out<T: 'static>(self, path: impl Fn(&T, &App) -> Option<PathBuf> + 'static) -> Self {
+    /// Makes the element a drag handle that offers `view`'s PNG as a file to other apps once the drag leaves the window.
+    fn drag_file_out<V: 'static>(self, view: WeakEntity<V>, png: impl Fn(&V, &App) -> Vec<u8> + 'static) -> Self {
+        let path = move |view: &WeakEntity<V>, cx: &App| write_temp(&png(view.upgrade()?.read(cx), cx), &settings::get(cx).file_name);
+        let this = self.on_drag(view, |_, _, _, cx| cx.new(|_| DragGhost));
         // GPUI hands a drag to the platform only on macOS.
         #[cfg(windows)]
-        return self.on_drag_move(move |e: &DragMoveEvent<T>, window, cx| {
+        return this.on_drag_move(move |e: &DragMoveEvent<WeakEntity<V>>, window, cx| {
             if Bounds::new(Point::default(), window.viewport_size()).contains(&e.event.position) {
                 return;
             }
@@ -2484,7 +2400,7 @@ pub trait DragFileOut: StatefulInteractiveElement + Sized {
             }
         });
         #[cfg(not(windows))]
-        self.external_drag_payload(move |drag: &T, _, cx| Some(ExternalDragPayload::Files(FileDragPaths::new([(path(drag, cx)?, false)]))))
+        this.external_drag_payload(move |view: &WeakEntity<V>, _, cx| Some(ExternalDragPayload::Files(FileDragPaths::new([(path(view, cx)?, false)]))))
     }
 }
 
@@ -2567,21 +2483,6 @@ fn is_trivial(o: &Object, scale: f32) -> bool {
     }
 }
 
-fn resize_box(r: R, i: u8, p: P) -> R {
-    let (mut x0, mut y0, mut x1, mut y1) = (r.x, r.y, r.right(), r.bottom());
-    match i {
-        0 => (x0, y0) = p,
-        1 => y0 = p.1,
-        2 => (x1, y0) = p,
-        3 => x1 = p.0,
-        4 => (x1, y1) = p,
-        5 => y1 = p.1,
-        6 => (x0, y1) = p,
-        _ => x0 = p.0,
-    }
-    R::from_points((x0, y0), (x1, y1))
-}
-
 fn fit_k(bounds: Bounds<Pixels>, area: R, scale: f32) -> f32 {
     let bw = f32::from(bounds.size.width) - FIT_MARGIN * 2.;
     let bh = f32::from(bounds.size.height) - FIT_MARGIN * 2.;
@@ -2643,18 +2544,7 @@ impl Render for Editor {
             // actions exist only while those keys aren't text: gpui then disables the items.
             .when(self.editing.is_none() && self.focus.is_focused(window), |d| {
                 d
-                    .on_action(cx.listener(|this, _: &ToolSelect, w, cx| this.set_tool(Tool::Select, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolArrow, w, cx| this.set_tool(Tool::Arrow, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolText, w, cx| this.set_tool(Tool::Text, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolRect, w, cx| this.set_tool(Tool::Rect, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolOval, w, cx| this.set_tool(Tool::Oval, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolLine, w, cx| this.set_tool(Tool::Line, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolPen, w, cx| this.set_tool(Tool::Pen, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolHighlighter, w, cx| this.set_tool(Tool::Highlighter, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolCounter, w, cx| this.set_tool(Tool::Counter, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolRedact, w, cx| this.set_tool(Tool::Redact, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolSpotlight, w, cx| this.set_tool(Tool::Spotlight, w, cx)))
-                    .on_action(cx.listener(|this, _: &ToolMagnifier, w, cx| this.set_tool(Tool::Magnifier, w, cx)))
+                    .on_action(cx.listener(|this, a: &SetTool, w, cx| this.set_tool(a.0, w, cx)))
                     .when_some(self.selection, |d, sel| {
                         d.on_action(cx.listener(move |this, _: &SelectionTopLeft, _, cx| this.inspect((sel.x, sel.y), cx)))
                             .on_action(cx.listener(move |this, _: &SelectionBottomRight, _, cx| {
@@ -2698,13 +2588,7 @@ impl Render for Editor {
             }))
             .on_action(cx.listener(|this, _: &ZoomSelection, _, cx| {
                 if let Some(sel) = this.selection {
-                    let b = this.canvas_bounds.get();
-                    let k = fit_k(b, sel, 1. / 32.);
-                    let centered = centered_origin(b, this.view_area(), k);
-                    let target = centered_origin(b, sel, k);
-                    this.zoom = Some(k);
-                    this.pan = point(target.x - centered.x, target.y - centered.y);
-                    cx.notify();
+                    this.fit_to(sel, 1. / 32., cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &Autoadjust, _, cx| this.autoadjust(cx)))
@@ -2720,9 +2604,7 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &CopyTextColor, _, cx| this.copy_color(true, cx)))
             .on_action(cx.listener(|this, _: &CopyAverageColor, _, cx| this.copy_average_color(cx)))
             .on_action(cx.listener(|this, _: &ToggleUnit, _, cx| this.toggle_unit(cx)))
-            .on_action(cx.listener(|this, _: &ToggleBackdrop, w, cx| {
-                crate::backdrop::toggle(this, w, cx);
-            }))
+            .on_action(cx.listener(|this, _: &ToggleBackdrop, w, cx| this.toggle_backdrop_panel(w, cx)))
             .child(div().flex_none().child(self.render_toolbar(window, cx)))
             .child(
                 h_flex()
@@ -2735,21 +2617,26 @@ impl Render for Editor {
 }
 
 impl Editor {
-    pub fn set_backdrop(&mut self, b: Option<crate::backdrop::Backdrop>, window: &mut Window, cx: &mut Context<Self>) {
-        let open = b.as_ref().is_some_and(|b| b.panel_open);
-        if !open {
-            self.backdrop_panel = None;
-        } else if self.backdrop_panel.is_none() {
-            let editor = cx.entity().downgrade();
-            let b = b.clone().unwrap_or_default();
-            let suggested = crate::backdrop::suggest(&self.image);
-            self.backdrop_panel = Some(cx.new(|cx| crate::backdrop::Panel::new(editor, &b, suggested, window, cx)));
-        }
+    pub fn set_backdrop(&mut self, b: Option<crate::backdrop::Backdrop>, cx: &mut Context<Self>) {
         if self.backdrop.is_some() != b.is_some() {
             self.fit(cx);
         }
+        if b.is_none() {
+            self.backdrop_panel = None;
+        }
         self.backdrop = b;
         cx.notify();
+    }
+
+    /// K adds the last backdrop with its panel, then shows and hides the panel.
+    pub fn toggle_backdrop_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.backdrop_panel.take().is_some() {
+            return cx.notify();
+        }
+        let b = self.backdrop.clone().or_else(|| settings::get(cx).backdrop.clone()).unwrap_or_default();
+        let (editor, suggested) = (cx.entity().downgrade(), crate::backdrop::suggest(&self.image));
+        self.backdrop_panel = Some(cx.new(|cx| crate::backdrop::Panel::new(editor, &b, suggested, window, cx)));
+        self.set_backdrop(Some(b), cx);
     }
 
     fn render_toolbar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2781,7 +2668,7 @@ impl Editor {
                 .child(icon_button("s-cancel", IconName::X, "Cancel selection", Box::new(Cancel)))
         } else {
             let shown = self.shown_tools.clone();
-            let hidden = TOOL_ACTIONS[shown.get()..].iter().any(|(t, _)| *t == self.tool);
+            let hidden = TOOLS[shown.get()..].contains(&self.tool);
             // Tools that don't fit wrap onto a clipped second row; the More menu lists them instead.
             let row = h_flex()
                 .min_w_0()
@@ -2794,14 +2681,13 @@ impl Editor {
                     // The ruler hint sits after Text and isn't a tool.
                     shown.set(if fit > 3 { fit - 1 } else { fit });
                 })
-                .children(TOOL_ACTIONS.iter().flat_map(|(tool, action)| {
-                    let tool = *tool;
+                .children(TOOLS.into_iter().flat_map(|tool| {
                     let button = Button::new(("tool", tool as usize))
                         .icon(Icon::new(tool_icon(tool)))
                         .ghost()
                         .small()
                         .selected(self.tool == tool)
-                        .tooltip_with_action(tool.name(), action().as_ref(), Some("Editor"))
+                        .tooltip_with_action(tool.name(), &SetTool(tool), Some("Editor"))
                         .on_click(cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)));
                     // The ruler is held, not picked, so its button only explains the keys.
                     std::iter::once(button.into_any_element()).chain((tool == Tool::Text).then(|| ruler_hint().into_any_element()))
@@ -2824,12 +2710,12 @@ impl Editor {
                         .selected(hidden)
                         .tooltip("More")
                         .dropdown_menu(move |menu, _, _| {
-                            let tail = &TOOL_ACTIONS[shown.get()..];
+                            let tail = &TOOLS[shown.get()..];
                             tail.iter()
-                                .fold(menu.action_context(focus.clone()), |menu, &(tool, action)| {
+                                .fold(menu.action_context(focus.clone()), |menu, &tool| {
                                     // Tool actions only bind while the canvas has focus, which the open menu holds.
                                     let editor = editor.clone();
-                                    menu.item(PopupMenuItem::new(tool.name()).icon(Icon::new(tool_icon(tool))).action(action()).on_click(
+                                    menu.item(PopupMenuItem::new(tool.name()).icon(Icon::new(tool_icon(tool))).action(Box::new(SetTool(tool))).on_click(
                                         move |_, window, cx| {
                                             let _ = editor.update(cx, |this, cx| this.set_tool(tool, window, cx));
                                         },
@@ -2844,14 +2730,8 @@ impl Editor {
 
         let zoom_pct = (self.view().k * self.scale * 100.).round();
         let area = self.selection.unwrap_or_else(|| self.outer());
-        let unit = if self.unit_px { 1. } else { self.scale };
         let size_caption = if self.selection.is_some() { "Selection size" } else { "Image size" };
-        let size_text = format!(
-            "{}×{} {}",
-            (area.w / unit).round(),
-            (area.h / unit).round(),
-            if self.unit_px { "px" } else { "pt" }
-        );
+        let size_text = self.size_label(area);
         let hover = self.cursor.and_then(|p| self.pixel_at(p));
         let contrast = self.selection_px().and_then(|r| match self.contrast.get() {
             Some((at, pair)) if at == r => pair,
@@ -2903,8 +2783,7 @@ impl Editor {
                     .hover(|s| s.bg(cx.theme().secondary_hover))
                     .child(Icon::new(IconName::GripVertical).small().text_color(theme.muted_foreground))
                     .tooltip(|window, cx| Tooltip::new("Drag the image into another app").build(window, cx))
-                    .on_drag(DragOut(cx.weak_entity()), |_, _, _, cx| cx.new(|_| DragGhost))
-                    .drag_file_out(|drag: &DragOut, cx| drag.0.upgrade()?.read(cx).export_temp(cx)),
+                    .drag_file_out(cx.weak_entity(), Self::png),
             )
             .child(divider())
             .child(tools)
@@ -2916,7 +2795,7 @@ impl Editor {
                     .small()
                     .selected(self.backdrop.is_some())
                     .tooltip_with_action("Backdrop", &ToggleBackdrop, Some("Editor"))
-                    .on_click(cx.listener(|this, _, w, cx| crate::backdrop::toggle(this, w, cx))),
+                    .on_click(cx.listener(|this, _, w, cx| this.toggle_backdrop_panel(w, cx))),
             )
             .child(
                 Button::new("undo")
@@ -3062,8 +2941,7 @@ impl Editor {
         if self.selection.is_some() || !self.ruler.is_empty() {
             return None;
         }
-        let tool = self.styled_tool()?;
-        let style = self.current_style()?;
+        let (tool, style) = self.styled()?;
         if tool == Tool::Select {
             return None;
         }
@@ -3161,9 +3039,7 @@ impl Editor {
         self.refresh_patches();
         let tiles: Vec<(PxRect, Arc<RenderImage>)> = self.image.tiles().map(|(r, t)| (r, t.clone())).collect();
         let objects = self.objects.clone();
-        let ctx_scale = self.scale;
-        let unit_px = self.unit_px;
-        let text_lines = self.text_lines.clone();
+        let ctx = self.ctx();
         let canvas_rect = self.canvas();
         let view_area = self.view_area();
         // Pixels cropped away stay hidden even where the canvas grows over them.
@@ -3216,15 +3092,7 @@ impl Editor {
                 _ => CursorStyle::Crosshair,
             }
         };
-        let selection_label = selection.map(|s| {
-            let unit = if unit_px { 1. } else { scale };
-            format!(
-                "{}×{} {}",
-                (s.w / unit).round(),
-                (s.h / unit).round(),
-                if unit_px { "px" } else { "pt" }
-            )
-        });
+        let selection_label = selection.map(|s| self.size_label(s));
 
         div()
             .id("canvas")
@@ -3266,12 +3134,6 @@ impl Editor {
                         }
                         let view = compute_view(bounds, view_area, scale, zoom, pan);
                         paint_checker(bounds, checker_base, window);
-                        let ctx = Ctx {
-                            measure: &measure,
-                            scale: ctx_scale,
-                            unit_px,
-                            text: text_lines.clone(),
-                        };
                         let lookup = |key: u64| patches.borrow().get(&key).map(|p| (p.at, p.image.clone()));
                         window.with_content_mask(Some(ContentMask { bounds }), |window| {
                             if let Some(b) = &backdrop {
@@ -3284,7 +3146,8 @@ impl Editor {
                             if let Some(bg_fill) = bg_fill
                                 && !image_rect.contains_rect(&canvas_rect)
                             {
-                                window.paint_quad(fill_quad(canvas_b, paint::color(bg_fill, 1.), backdrop.as_ref().map_or(0., |b| b.inner_radius * view.k * scale)));
+                                let radius = backdrop.as_ref().map_or(0., |b| b.inner_radius * view.k * scale);
+                                window.paint_quad(fill(canvas_b, paint::color(bg_fill, 1.)).corner_radii(px(radius)));
                             }
                             window.with_content_mask(Some(ContentMask { bounds: canvas_b }), |window| {
                                 let visible = view.rect(image_rect).intersect(&canvas_b);
@@ -3307,18 +3170,8 @@ impl Editor {
                                         }
                                     }
                                 });
-                                let mut dimmed = false;
-                                for o in doc::paint_order(&objects) {
-                                    if !dimmed
-                                        && matches!(o.shape, Shape::Spotlight { .. })
-                                        && let Some(dim) = doc::spotlight_dim(&objects, canvas_rect.inflate(4000.))
-                                    {
-                                        dimmed = true;
-                                        paint::prim(&dim, view, window, cx, &lookup);
-                                    }
-                                    for prim in o.prims(&ctx) {
-                                        paint::prim(&prim, view, window, cx, &lookup);
-                                    }
+                                for prim in doc::scene(&objects, &ctx, canvas_rect.inflate(4000.)) {
+                                    paint::prim(&prim, view, window, cx, &lookup);
                                 }
                             });
                             let pink = paint::color(0xF7157A, 1.);
@@ -3587,10 +3440,6 @@ fn paint_checker(bounds: Bounds<Pixels>, base: Hsla, window: &mut Window) {
         }
         y += step;
     }
-}
-
-fn fill_quad(b: Bounds<Pixels>, color: Hsla, radius: f32) -> PaintQuad {
-    quad(b, px(radius), color, px(0.), gpui_kit::transparent_black(), BorderStyle::Solid)
 }
 
 fn paint_handle(p: Point<Pixels>, accent: Hsla, window: &mut Window) {

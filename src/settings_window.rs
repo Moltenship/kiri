@@ -22,8 +22,8 @@ pub fn bind_keys(cx: &mut App) {
     crate::bind_keys(cx, [KeyBinding::new(crate::keys("cmd-w"), CloseSettings, Some("SettingsWindow"))]);
 }
 
-/// macOS's own shortcuts, read again whenever the settings window comes forward, since
-/// they change in System Settings.
+/// The system's own shortcuts, read again whenever the settings window comes forward, since
+/// they change in the system's settings.
 #[derive(Default)]
 pub struct SystemShortcuts(pub Vec<crate::mac::SystemShortcut>);
 
@@ -33,21 +33,43 @@ pub fn refresh_system_shortcuts(cx: &mut App) {
     cx.set_global(SystemShortcuts(crate::mac::system_shortcuts()));
 }
 
-/// "Turn off ⇧⌘4 in Keyboard Shortcuts › Screenshots", when macOS has `keys` too.
+/// What to do about the system's shortcut on `keys`, when it has one.
 pub fn system_conflict(keys: &str, cx: &App) -> Option<String> {
     let all = &cx.try_global::<SystemShortcuts>()?.0;
-    let taken = crate::mac::system_shortcut(all, keys)?;
-    Some(match cfg!(windows) {
-        true => windows_conflict(keys, taken),
-        false => format!("Turn off {} in Keyboard Shortcuts › {}", pretty(keys), taken.section),
-    })
+    Some(conflict(keys, crate::mac::system_shortcut(all, keys)?))
 }
 
-fn windows_conflict(keys: &str, taken: &crate::mac::SystemShortcut) -> String {
+fn conflict(keys: &str, taken: &crate::mac::SystemShortcut) -> String {
+    let uses = format!("{} uses {} for “{}”", crate::platform_text("macOS", "Windows"), pretty(keys), taken.name);
+    // No section: on Windows nothing turns it off; on macOS it isn't in Apple's table.
     match taken.section.as_str() {
-        "" => format!("Windows uses {} for {}, so Kiri may not get it.", pretty(keys), taken.name),
-        section => format!("Windows uses {} for {}. Turn it off in Settings › {section}.", pretty(keys), taken.name),
+        "" if cfg!(windows) => format!("{uses}, so Kiri may not get it."),
+        "" => format!("{uses}. Turn it off in Keyboard Shortcuts."),
+        section => format!("{uses}. Turn it off in {} › {section}.", crate::platform_text("Keyboard Shortcuts", "Settings")),
     }
+}
+
+/// Screen and Area hotkeys on the system's screenshot keys.
+pub const SYSTEM_KEYS: (&str, &str) = if cfg!(windows) { ("shift+printscreen", "printscreen") } else { ("shift+cmd+3", "shift+cmd+4") };
+
+/// Gives Capture Screen and Capture Area `(screen, area)`; `SYSTEM_KEYS` turns those off in the system first.
+pub fn set_capture_keys((screen, area): (&str, &str), cx: &mut App) {
+    if (screen, area) == SYSTEM_KEYS && let Err(err) = crate::mac::release_screenshot_keys() {
+        let whose = crate::platform_text("the macOS shortcuts", "Snipping Tool on Print Screen");
+        crate::toast::show(format!("Couldn't turn off {whose}: {err}"), cx);
+    }
+    refresh_system_shortcuts(cx);
+    settings::update(cx, |s| {
+        s.hotkeys.insert(Capture::Fullscreen, Some(screen.into()));
+        s.hotkeys.insert(Capture::Area, Some(area.into()));
+    });
+}
+
+pub fn login_switch() -> Switch {
+    Switch::new("login").checked(settings::launch_at_login()).on_click(|v, window, cx| {
+        crate::set_launch_at_login(*v, cx);
+        window.refresh();
+    })
 }
 
 pub struct Open(pub AnyWindowHandle);
@@ -339,13 +361,6 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
         })
         .detach();
     });
-    let login = Switch::new("login").checked(settings::launch_at_login()).on_click(|v, window, cx| {
-        if let Err(err) = settings::set_launch_at_login(*v) {
-            crate::toast::show(format!("Couldn't change login item: {err}"), cx);
-        }
-        crate::refresh_tray(cx);
-        window.refresh();
-    });
     Page {
         title: "General",
         icon: IconName::Settings,
@@ -353,7 +368,7 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
             group(
                 None,
                 [
-                    row("Launch at login", login),
+                    row("Launch at login", login_switch()),
                     row("Appearance", appearance_picker(64., cx)),
                     row("Check for updates automatically", toggle("updates", |s| s.auto_update, |s, v| s.auto_update = v, cx))
                         .description(format!(
@@ -412,7 +427,7 @@ fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, sp
                         .mac_only(),
                     row("Freeze the screen while selecting", toggle("freeze", |s| s.freeze_screen, |s, v| s.freeze_screen = v, cx))
                         .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")
-                        .disabled(!cfg!(windows) && now.area_selection != AreaSelection::Kiri),
+                        .disabled(!now.kiri_selects()),
                 ],
             ),
             group(
@@ -498,70 +513,27 @@ fn editor(cx: &App) -> Page {
 }
 
 fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
-    let screen = crate::platform_text("shift+cmd+3", "shift+printscreen");
-    let area = crate::platform_text("shift+cmd+4", "printscreen");
     let system = h_flex()
         .gap_2()
         .child(button("keyboard", crate::platform_text("Open Keyboard Shortcuts", "Open Keyboard Settings"), |cx| cx.open_url(KEYBOARD_SETTINGS)))
-        .child(button("system-keys", crate::platform_text("Use ⇧⌘3 and ⇧⌘4", "Use Print Screen"), move |cx| {
-            if let Err(err) = crate::mac::release_screenshot_keys() {
-                let whose = crate::platform_text("the macOS shortcuts", "Snipping Tool on Print Screen");
-                crate::toast::show(format!("Couldn't turn off {whose}: {err}"), cx);
-            }
-            refresh_system_shortcuts(cx);
-            settings::update(cx, |s| {
-                s.hotkeys.insert(Capture::Fullscreen, Some(screen.into()));
-                s.hotkeys.insert(Capture::Area, Some(area.into()));
-            });
-            for keys in crate::reload_hotkeys(cx) {
-                crate::toast::show(format!("{} is taken by another app", pretty(&keys)), cx);
-            }
-            crate::refresh_tray(cx);
+        .child(button("system-keys", crate::platform_text("Use ⇧⌘3 and ⇧⌘4", "Use Print Screen"), |cx| {
+            set_capture_keys(SYSTEM_KEYS, cx);
+            crate::rebind_hotkeys(cx);
         }));
     let all = cx.try_global::<SystemShortcuts>().map(|s| s.0.clone()).unwrap_or_default();
     let keys = Capture::ALL
         .into_iter()
         .map(|capture| {
-            let taken = settings::get(cx).hotkey(capture).and_then(|keys| Some((crate::mac::system_shortcut(&all, &keys)?.clone(), keys)));
+            let taken = settings::get(cx).hotkey(capture).and_then(|keys| Some((crate::mac::system_shortcut(&all, &keys)?, keys)));
             let recorder = recorder(capture, window, cx);
-            match taken {
-                None => row(capture.label(), recorder),
-                Some((taken, keys)) if cfg!(windows) => row(
-                    capture.label(),
-                    h_flex()
-                        .gap_2()
-                        .when(!taken.section.is_empty(), |d| {
-                            d.child(
-                                Button::new(("open-keyboard", capture as usize))
-                                    .label("Open Settings")
-                                    .outline()
-                                    .small()
-                                    .on_click(|_, _, cx| cx.open_url(KEYBOARD_SETTINGS)),
-                            )
-                        })
-                        .child(recorder),
-                )
-                .alert(windows_conflict(&keys, &taken)),
-                Some((taken, keys)) => row(
-                    capture.label(),
-                    h_flex()
-                        .gap_2()
-                        .child(
-                            Button::new(("open-keyboard", capture as usize))
-                                .label("Open Settings")
-                                .outline()
-                                .small()
-                                .on_click(|_, _, cx| cx.open_url(KEYBOARD_SETTINGS)),
-                        )
-                        .child(recorder),
-                )
-                .alert(format!(
-                    "macOS uses {} for “{}”. Turn it off in Keyboard Shortcuts › {}.",
-                    pretty(&keys),
-                    taken.name,
-                    taken.section
-                )),
-            }
+            let Some((taken, keys)) = taken else { return row(capture.label(), recorder) };
+            let open = Button::new(("open-keyboard", capture as usize))
+                .label("Open Settings")
+                .outline()
+                .small()
+                .on_click(|_, _, cx| cx.open_url(KEYBOARD_SETTINGS));
+            let open = (!cfg!(windows) || !taken.section.is_empty()).then_some(open);
+            row(capture.label(), h_flex().gap_2().children(open).child(recorder)).alert(conflict(&keys, taken))
         })
         .collect::<Vec<_>>();
     Page {
@@ -610,10 +582,7 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
                 return;
             }
             cx.set_global(Recording(None));
-            for keys in crate::reload_hotkeys(cx) {
-                crate::toast::show(format!("{} is taken by another app", pretty(&keys)), cx);
-            }
-            crate::refresh_tray(cx);
+            crate::rebind_hotkeys(cx);
         });
         Recorder { focus, _subscriptions: [suspend, restore] }
     });
@@ -723,7 +692,7 @@ pub fn pretty(keys: &str) -> String {
 /// As Windows writes shortcuts: "Win+Ctrl+Shift+2", "PrtScn".
 fn pretty_windows(keys: &str) -> String {
     const MODIFIERS: [(&[&str], &str); 4] =
-        [(&["super", "cmd", "win", "meta"], "Win"), (&["ctrl", "control"], "Ctrl"), (&["alt", "option"], "Alt"), (&["shift"], "Shift")];
+        [(&["super", "cmd", "meta"], "Win"), (&["ctrl", "control"], "Ctrl"), (&["alt", "option"], "Alt"), (&["shift"], "Shift")];
     let parts: Vec<String> = keys.split('+').map(|p| p.to_ascii_lowercase()).collect();
     let modifier = |p: &str| MODIFIERS.iter().any(|(names, _)| names.contains(&p));
     let key = parts.iter().find(|p| !modifier(p)).map(|key| match key.as_str() {
@@ -784,8 +753,9 @@ fn advanced(cx: &App) -> Page {
                 {
                     cx.update(|cx| match settings::import(&path, cx) {
                         Ok(()) => {
-                            crate::reload_hotkeys(cx);
-                            crate::refresh_tray(cx);
+                            crate::rebind_hotkeys(cx);
+                            crate::apply_appearance(cx);
+                            crate::editor::apply_on_top(cx);
                         }
                         Err(err) => crate::toast::show(format!("Couldn't import: {err}"), cx),
                     });

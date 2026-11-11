@@ -95,17 +95,15 @@ impl Capture {
 }
 
 /// What ⌘Q does in Kiri's windows; quitting also stops the hotkeys and the menu bar icon.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum CmdQ {
-    #[default]
     Ask,
     Quit,
     CloseWindow,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Appearance {
-    #[default]
     System,
     Light,
     Dark,
@@ -249,7 +247,7 @@ pub struct Settings {
     /// Save writes a JPEG instead of a PNG when that is smaller.
     pub save_auto_jpeg: bool,
     pub editor_on_top: bool,
-    /// "Copied" and "Saved" toasts; errors show regardless.
+    /// The "Saved" toast; errors show regardless.
     pub confirmations: bool,
     pub cmd_q: CmdQ,
     pub unit_px: bool,
@@ -331,6 +329,11 @@ impl Settings {
         self.save_folder
             .clone()
             .unwrap_or_else(crate::mac::desktop_dir)
+    }
+
+    /// Whether Kiri's overlay selects areas. Windows has no system selection to hand off to.
+    pub fn kiri_selects(&self) -> bool {
+        cfg!(windows) || self.area_selection == AreaSelection::Kiri
     }
 
     pub fn hotkey(&self, action: Capture) -> Option<String> {

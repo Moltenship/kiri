@@ -38,7 +38,8 @@ pub fn patch(image: &TiledImage, op: PixelOp, rect: R) -> Option<Patch> {
     }
 }
 
-fn clamp(image: &TiledImage, r: R) -> Option<PxRect> {
+/// The whole pixels `r` touches inside the image.
+pub fn clamp(image: &TiledImage, r: R) -> Option<PxRect> {
     let r = r.round_out().intersect(&R::new(
         0.,
         0.,
@@ -148,13 +149,7 @@ fn erase(image: &TiledImage, rect: PxRect) -> Vec<u8> {
 fn lens(image: &TiledImage, src: R, dst: R, round: bool) -> Option<Patch> {
     let dst = dst.round_out();
     let (w, h) = (dst.w.max(1.) as u32, dst.h.max(1.) as u32);
-    let read = R::new(0., 0., image.width as f32, image.height as f32).intersect(&src.round_out())?;
-    let read = PxRect {
-        x: read.x as u32,
-        y: read.y as u32,
-        w: read.w as u32,
-        h: read.h as u32,
-    };
+    let read = clamp(image, src)?;
     let source = image.read(read);
     let mut out = vec![0u8; (w * h * 4) as usize];
     let (cx, cy, r) = (w as f32 / 2., h as f32 / 2., w.min(h) as f32 / 2.);
@@ -327,19 +322,15 @@ pub fn sample(image: &TiledImage, rect: PxRect) -> impl Iterator<Item = u32> + '
     })
 }
 
-fn mean(colors: impl Iterator<Item = u32>) -> Option<u32> {
+pub fn average_color(image: &TiledImage, rect: PxRect) -> Option<u32> {
     let (mut sum, mut n) = ([0u64; 3], 0u64);
-    for c in colors {
+    for c in sample(image, rect) {
         for (i, s) in sum.iter_mut().enumerate() {
             *s += (c >> (16 - 8 * i) & 255) as u64;
         }
         n += 1;
     }
     (n > 0).then(|| sum.iter().fold(0, |acc, s| acc << 8 | (s / n) as u32))
-}
-
-pub fn average_color(image: &TiledImage, rect: PxRect) -> Option<u32> {
-    mean(sample(image, rect))
 }
 
 /// The two most common clearly different colors, e.g. text and its background.
@@ -376,7 +367,6 @@ pub fn contrast_ratio(a: u32, b: u32) -> f32 {
     let (la, lb) = (luminance(a), luminance(b));
     (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
 }
-
 
 /// Lays displays out as they are arranged, at the sharpest display's scale, so one capture
 /// can hold them all. `origin` is each display's top-left in global points; gaps stay transparent.
@@ -432,10 +422,10 @@ mod tests {
     fn transparent_edges_have_no_background() {
         let (w, h) = (8u32, 8u32);
         let mut bgra = vec![0u8; w as usize * h as usize * 4];
-        let clear = TiledImage::from_bgra(w, h, &bgra, w as usize * 4);
+        let clear = TiledImage::from_bgra(w, h, &bgra);
         assert_eq!(background_color(&clear, clear.full()), None);
         bgra.chunks_mut(4).for_each(|p| p.copy_from_slice(&[0x30, 0x20, 0x10, 0xFF]));
-        let opaque = TiledImage::from_bgra(w, h, &bgra, w as usize * 4);
+        let opaque = TiledImage::from_bgra(w, h, &bgra);
         assert_eq!(background_color(&opaque, opaque.full()), Some(0x102030));
     }
 }

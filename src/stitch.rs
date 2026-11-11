@@ -204,7 +204,6 @@ fn similar(a: &Signature, b: &Signature) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
 
     const W: usize = 320;
     const H: usize = 240;
@@ -553,48 +552,21 @@ mod tests {
         }
     }
 
-    fn time_pushes(page: &[u8], moves: &[usize]) -> Vec<Step> {
-        let (w, h) = (2880, 1800);
-        let at = offsets(0, &[0].iter().chain(moves).copied().collect::<Vec<_>>());
-        let frames: Vec<_> = at.iter().map(|&o| frame(page, w, h, o)).collect();
-        let mut stitcher = Stitcher::new(&frames[0], w as u32, h as u32, u32::MAX);
-        let mut times = Vec::new();
-        let steps = frames[1..]
-            .iter()
-            .map(|f| {
-                let start = Instant::now();
-                let step = stitcher.push(f);
-                times.push(start.elapsed().as_secs_f64() * 1000.0);
-                step
-            })
-            .collect();
-        let worst = times.iter().copied().fold(0.0, f64::max);
-        let mean = times.iter().sum::<f64>() / times.len() as f64;
-        eprintln!("2880x1800 push: mean {mean:.2} ms, worst {worst:.2} ms");
-        if steps == appended(moves) {
-            assert_image(
-                &stitcher.finish().2,
-                &expected(page, w, h, 0, *at.last().unwrap()),
-                w,
-            );
-        }
-        steps
-    }
-
     #[test]
-    fn retina_timing() {
-        let w = 2880;
-        let moves = [40, 400, 7, 900, 120, 1200, 64, 300, 1, 1500];
-        assert_eq!(
-            time_pushes(&dense_page(w, 9000, 8), &moves),
-            appended(&moves)
-        );
+    fn retina_frames() {
+        let (w, h) = (2880, 1800);
+        let check = |page: &[u8], moves: &[usize]| {
+            let at = offsets(0, &[0].iter().chain(moves).copied().collect::<Vec<_>>());
+            let (steps, out) = stitch(page, w, h, &at, u32::MAX);
+            assert_eq!(steps, appended(moves));
+            assert_image(&out, &expected(page, w, h, 0, *at.last().unwrap()), w);
+        };
+        check(&dense_page(w, 9000, 8), &[40, 400, 7, 900, 120, 1200, 64, 300, 1, 1500]);
 
         let mut nearly_blank = blank(w, 7200);
         for y in [500, 1900, 2600, 4000, 5600] {
             bar(&mut nearly_blank, w, y..y + 30, 90);
         }
-        let moves = [40, 80, 7, 60, 1, 90, 30, 400, 900, 200];
-        assert_eq!(time_pushes(&nearly_blank, &moves), appended(&moves));
+        check(&nearly_blank, &[40, 80, 7, 60, 1, 90, 30, 400, 900, 200]);
     }
 }

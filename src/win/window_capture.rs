@@ -36,7 +36,7 @@ pub struct WindowInfo {
 }
 
 /// Titled, visible app windows, front to back, without Kiri's own.
-pub async fn list_windows() -> Vec<WindowInfo> {
+pub fn list_windows() -> Vec<WindowInfo> {
     let mut found: Vec<HWND> = Vec::new();
     unsafe extern "system" fn each(hwnd: HWND, found: LPARAM) -> BOOL {
         unsafe { (*(found.0 as *mut Vec<HWND>)).push(hwnd) };
@@ -47,9 +47,9 @@ pub async fn list_windows() -> Vec<WindowInfo> {
 }
 
 /// The foreground window, or the frontmost one when that isn't capturable.
-pub async fn frontmost_window() -> Option<WindowInfo> {
+pub fn frontmost_window() -> Option<WindowInfo> {
     let front = unsafe { GetForegroundWindow() }.0 as usize as u32;
-    let mut windows = list_windows().await;
+    let mut windows = list_windows();
     let i = windows.iter().position(|w| w.id == front).unwrap_or(0);
     (i < windows.len()).then(|| windows.swap_remove(i))
 }

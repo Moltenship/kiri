@@ -364,7 +364,6 @@ pub enum Prim {
         path: Vec<Seg>,
         width: f32,
         color: u32,
-        alpha: f32,
         dash: Option<f32>,
     },
     /// One line of text; `at` is the top-left of its line box.
@@ -469,6 +468,22 @@ pub fn box_points(r: R) -> [P; 8] {
     [(x0, y0), (mx, y0), (x1, y0), (x1, my), (x1, y1), (mx, y1), (x0, y1), (x0, my)]
 }
 
+/// The corners of `r` once box handle `i` is dragged to `p`; they cross when the drag passes the far edge.
+pub fn resize_box(r: R, i: u8, p: P) -> (P, P) {
+    let (mut x0, mut y0, mut x1, mut y1) = (r.x, r.y, r.right(), r.bottom());
+    match i {
+        0 => (x0, y0) = p,
+        1 => y0 = p.1,
+        2 => (x1, y0) = p,
+        3 => x1 = p.0,
+        4 => (x1, y1) = p,
+        5 => y1 = p.1,
+        6 => (x0, y1) = p,
+        _ => x0 = p.0,
+    }
+    ((x0, y0), (x1, y1))
+}
+
 fn box_handles(r: R) -> impl Iterator<Item = (Handle, P)> {
     box_points(r).into_iter().enumerate().map(|(i, p)| (Handle::Box(i as u8), p))
 }
@@ -534,8 +549,7 @@ fn cut_spine(spine: &[P], head: f32) -> (Vec<P>, P) {
 }
 
 fn polygon(pts: &[P]) -> Vec<Seg> {
-    let mut path = vec![Seg::M(pts[0])];
-    path.extend(pts[1..].iter().map(|p| Seg::L(*p)));
+    let mut path = polyline(pts);
     path.push(Seg::Z);
     path
 }
@@ -637,7 +651,7 @@ fn sketch_oval(r: R, seed: u64) -> Vec<Seg> {
 }
 
 /// Reshapes a freehand stroke onto the superellipse of exponent `n` that fills its bounds
-/// (2 an ellipse, 8 a rounded rectangle), keeping where it starts and ends, gap included.
+/// (2 an ellipse, 4 a rounded rectangle), keeping where it starts and ends, gap included.
 fn tidy_stroke(points: &[P], n: f32) -> Vec<Seg> {
     use std::f32::consts::TAU;
     let r = bbox(points);
@@ -728,6 +742,12 @@ pub fn contrast(bg: u32) -> u32 {
 }
 
 impl Object {
+    /// A spotlight's outline, which is also the hole it cuts in the dimming.
+    fn spotlight_path(&self, a: P, b: P) -> Vec<Seg> {
+        let r = R::from_points(a, b);
+        if self.variant == 1 { ellipse_path(r) } else { rect_path(r, self.size * 0.6) }
+    }
+
     fn spine(&self) -> Vec<P> {
         match &self.shape {
             Shape::Arrow { from, to, bend } => arrow_spine(*from, *to, *bend),
@@ -800,7 +820,6 @@ impl Object {
                         path: vec![Seg::M(tip), Seg::Q(ctrl, end)],
                         width: barb_w,
                         color: self.color,
-                        alpha: 1.,
                         dash: None,
                     });
                 }
@@ -983,10 +1002,10 @@ impl Object {
 
     pub fn drag_handle(&mut self, handle: Handle, p: P, shift: bool) {
         match (&mut self.shape, handle) {
-            (Shape::Arrow { from, to, .. }, Handle::Start) => {
+            (Shape::Arrow { from, to, .. } | Shape::Measure { from, to }, Handle::Start) => {
                 *from = if shift { snap45(*to, p) } else { p }
             }
-            (Shape::Arrow { from, to, .. }, Handle::End) => {
+            (Shape::Arrow { from, to, .. } | Shape::Measure { from, to }, Handle::End) => {
                 *to = if shift { snap45(*from, p) } else { p }
             }
             (Shape::Arrow { from, to, bend }, Handle::Bend) => {
@@ -1001,60 +1020,29 @@ impl Object {
                 let p = if shift { snap45(*from, p) } else { p };
                 *to = along(*from, p, -self.size * 2.4);
             }
-            (Shape::Measure { from, to }, Handle::Start) => {
-                *from = if shift { snap45(*to, p) } else { p }
-            }
-            (Shape::Measure { from, to }, Handle::End) => {
-                *to = if shift { snap45(*from, p) } else { p }
-            }
-            (
-                Shape::Rect { a, b }
-                | Shape::Oval { a, b }
-                | Shape::Redact { a, b }
-                | Shape::Spotlight { a, b },
-                Handle::Box(i),
-            ) => {
-                let r = R::from_points(*a, *b);
-                if shift && i % 2 == 0 {
-                    let anchor = [(r.right(), r.bottom()), (r.x, r.bottom()), (r.x, r.y), (r.right(), r.y)]
-                        [i as usize / 2];
-                    *a = anchor;
-                    *b = square(anchor, p);
-                    return;
-                }
-                let (mut x0, mut y0, mut x1, mut y1) = (r.x, r.y, r.right(), r.bottom());
-                match i {
-                    0 => (x0, y0) = p,
-                    1 => y0 = p.1,
-                    2 => (x1, y0) = p,
-                    3 => x1 = p.0,
-                    4 => (x1, y1) = p,
-                    5 => y1 = p.1,
-                    6 => (x0, y1) = p,
-                    _ => x0 = p.0,
-                }
-                *a = (x0, y0);
-                *b = (x1, y1);
-            }
             (Shape::Image { a, b, .. }, Handle::Box(i)) if i % 2 == 0 => {
                 let r = R::from_points(*a, *b);
-                let anchor = [(r.right(), r.bottom()), (r.x, r.bottom()), (r.x, r.y), (r.right(), r.y)][i as usize / 2];
+                let anchor = box_points(r)[(i as usize + 4) % 8];
                 let (dx, dy) = sub(p, anchor);
                 let k = (dx.abs() / r.w.max(1.)).max(dy.abs() / r.h.max(1.)).max(1. / r.w.min(r.h).max(1.));
                 *a = anchor;
                 *b = (anchor.0 + r.w * k * dx.signum(), anchor.1 + r.h * k * dy.signum());
             }
-            (Shape::Image { a, b, .. }, Handle::Box(i)) => {
+            (
+                Shape::Rect { a, b }
+                | Shape::Oval { a, b }
+                | Shape::Redact { a, b }
+                | Shape::Spotlight { a, b }
+                | Shape::Image { a, b, .. },
+                Handle::Box(i),
+            ) => {
                 let r = R::from_points(*a, *b);
-                let (mut x0, mut y0, mut x1, mut y1) = (r.x, r.y, r.right(), r.bottom());
-                match i {
-                    1 => y0 = p.1,
-                    3 => x1 = p.0,
-                    5 => y1 = p.1,
-                    _ => x0 = p.0,
-                }
-                *a = (x0, y0);
-                *b = (x1, y1);
+                (*a, *b) = if shift && i % 2 == 0 {
+                    let anchor = box_points(r)[(i as usize + 4) % 8];
+                    (anchor, square(anchor, p))
+                } else {
+                    resize_box(r, i, p)
+                };
             }
             (Shape::Counter { at, angle, .. }, Handle::Tail) => {
                 let d = sub(p, *at);
@@ -1089,7 +1077,6 @@ impl Object {
             path,
             width,
             color,
-            alpha: 1.,
             dash: None,
         };
         let fill = |path: Vec<Seg>, alpha: f32| Prim::Fill { path, color, alpha };
@@ -1100,7 +1087,6 @@ impl Object {
                     path: polyline(&[*from, *to]),
                     width: w,
                     color,
-                    alpha: 1.,
                     dash: (self.variant == 1).then_some(w * 2.6),
                 }];
                 for (end, other, cap) in [(*from, *to, caps[0]), (*to, *from, caps[1])] {
@@ -1242,17 +1228,7 @@ impl Object {
                     .collect()
             }
             // The dimming is shared by all spotlights; see `spotlight_dim`.
-            Shape::Spotlight { a, b } if w > 0. => {
-                let r = R::from_points(*a, *b);
-                vec![stroke(
-                    if self.variant == 1 {
-                        ellipse_path(r)
-                    } else {
-                        rect_path(r, w * 0.6)
-                    },
-                    w,
-                )]
-            }
+            Shape::Spotlight { a, b } if w > 0. => vec![stroke(self.spotlight_path(*a, *b), w)],
             Shape::Spotlight { .. } => Vec::new(),
             Shape::Magnifier { src, radius, lens, lens_radius } => {
                 let round = self.variant == 0;
@@ -1512,37 +1488,30 @@ fn ellipse_edge_dist(r: R, p: P) -> f32 {
     len(sub(p, on))
 }
 
-/// One dim layer for all spotlights, with their shapes cut out of it.
-/// Highlighters go under every other object: they multiply the image itself, and redaction must cover them.
-pub fn paint_order(objects: &[Object]) -> impl Iterator<Item = &Object> {
+/// Everything to paint, in order. Highlighters go under every other object: they multiply the image
+/// itself, and redaction must cover them. The dim over `canvas` goes under the first spotlight.
+pub fn scene(objects: &[Object], cx: &Ctx, canvas: R) -> Vec<Prim> {
     let marker = |o: &&Object| matches!(o.shape, Shape::Highlighter { .. });
-    objects.iter().filter(marker).chain(objects.iter().filter(move |o| !marker(o)))
+    let mut dim = spotlight_dim(objects, canvas);
+    let ordered = objects.iter().filter(marker).chain(objects.iter().filter(|o| !marker(o)));
+    ordered
+        .flat_map(|o| {
+            let dim = dim.take_if(|_| matches!(o.shape, Shape::Spotlight { .. }));
+            dim.into_iter().chain(o.prims(cx))
+        })
+        .collect()
 }
 
-pub fn spotlight_dim(objects: &[Object], canvas: R) -> Option<Prim> {
-    let holes: Vec<&Object> = objects
-        .iter()
-        .filter(|o| matches!(o.shape, Shape::Spotlight { .. }))
-        .collect();
-    if holes.is_empty() {
-        return None;
-    }
+/// One dim layer for all spotlights, with their shapes cut out of it.
+fn spotlight_dim(objects: &[Object], canvas: R) -> Option<Prim> {
     let mut path = rect_path(canvas, 0.);
-    for o in holes {
+    let frame = path.len();
+    for o in objects {
         if let Shape::Spotlight { a, b } = &o.shape {
-            let r = R::from_points(*a, *b);
-            path.extend(if o.variant == 1 {
-                ellipse_path(r)
-            } else {
-                rect_path(r, o.size * 0.6)
-            });
+            path.extend(o.spotlight_path(*a, *b));
         }
     }
-    Some(Prim::Fill {
-        path,
-        color: 0x000000,
-        alpha: 0.21,
-    })
+    (path.len() > frame).then_some(Prim::Fill { path, color: 0x000000, alpha: 0.21 })
 }
 
 /// The canvas is the crop until an object crosses its edge. Then it becomes
@@ -1658,15 +1627,7 @@ pub fn renumber_counters(objects: &mut [Object]) {
 }
 
 pub fn next_counter(objects: &[Object]) -> u32 {
-    objects
-        .iter()
-        .filter_map(|o| match o.shape {
-            Shape::Counter { n, .. } => Some(n),
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0)
-        + 1
+    counter_numbers(objects).last().map_or(1, |n| n + 1)
 }
 
 #[cfg(test)]

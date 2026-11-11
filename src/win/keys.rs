@@ -70,7 +70,7 @@ fn split(keys: &str) -> (Vec<&'static str>, String) {
             "ctrl" | "control" => mods.push("ctrl"),
             "alt" | "option" => mods.push("alt"),
             "shift" => mods.push("shift"),
-            "super" | "cmd" | "command" | "meta" | "win" => mods.push("super"),
+            "super" | "cmd" | "command" | "meta" => mods.push("super"),
             other => key = other.to_string(),
         }
     }

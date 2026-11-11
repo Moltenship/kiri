@@ -13,7 +13,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use serde::{Deserialize, Serialize};
-use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Transform};
+use tiny_skia::{FillRule, Mask, Paint, Pixmap, PixmapPaint, Transform};
 
 use crate::doc::R;
 use crate::editor::Editor;
@@ -128,8 +128,6 @@ pub struct Backdrop {
     pub outer_radius: f32,
     pub fill: Fill,
     pub aspect: Option<(u32, u32)>,
-    #[serde(skip)]
-    pub panel_open: bool,
 }
 
 impl Default for Backdrop {
@@ -142,7 +140,6 @@ impl Default for Backdrop {
             outer_radius: 0.,
             fill: Fill::Gradient(PALETTES[1], Kind::Mesh),
             aspect: None,
-            panel_open: true,
         }
     }
 }
@@ -199,10 +196,10 @@ impl Backdrop {
     }
 
     /// Puts the rendered canvas onto the backdrop for export.
-    pub fn compose(&self, inner: &Pixmap, canvas: R, scale: f32, _: &crate::tiled::TiledImage) -> Pixmap {
+    pub fn compose(&self, mut inner: Pixmap, canvas: R, scale: f32) -> Pixmap {
         let outer = self.outer(canvas, scale);
         let (w, h) = (outer.w as u32, outer.h as u32);
-        let mut out = render_fill(&self.fill, w, h);
+        let mut out = render_fill(&self.fill, w, h, 0);
         if self.outer_radius > 0. {
             apply_round_mask(&mut out, R::new(0., 0., w as f32, h as f32), self.outer_radius * scale);
         }
@@ -216,18 +213,14 @@ impl Backdrop {
                 0.18 + self.shadow * 0.32,
             );
         }
-        let mut rounded = inner.clone();
         if self.inner_radius > 0. {
-            apply_round_mask(
-                &mut rounded,
-                R::new(0., 0., inner.width() as f32, inner.height() as f32),
-                self.inner_radius * scale,
-            );
+            let all = R::new(0., 0., inner.width() as f32, inner.height() as f32);
+            apply_round_mask(&mut inner, all, self.inner_radius * scale);
         }
         out.draw_pixmap(
             ix.round() as i32,
             iy.round() as i32,
-            rounded.as_ref(),
+            inner.as_ref(),
             &PixmapPaint::default(),
             Transform::identity(),
             None,
@@ -237,25 +230,7 @@ impl Backdrop {
 }
 
 fn rounded_path(r: R, radius: f32) -> Option<tiny_skia::Path> {
-    let rect = tiny_skia::Rect::from_xywh(r.x, r.y, r.w, r.h)?;
-    if radius <= 0. {
-        return Some(PathBuilder::from_rect(rect));
-    }
-    let k = radius.min(r.w / 2.).min(r.h / 2.);
-    let c = k * (1. - 0.5523);
-    let (x0, y0, x1, y1) = (r.x, r.y, r.right(), r.bottom());
-    let mut pb = PathBuilder::new();
-    pb.move_to(x0 + k, y0);
-    pb.line_to(x1 - k, y0);
-    pb.cubic_to(x1 - c, y0, x1, y0 + c, x1, y0 + k);
-    pb.line_to(x1, y1 - k);
-    pb.cubic_to(x1, y1 - c, x1 - c, y1, x1 - k, y1);
-    pb.line_to(x0 + k, y1);
-    pb.cubic_to(x0 + c, y1, x0, y1 - c, x0, y1 - k);
-    pb.line_to(x0, y0 + k);
-    pb.cubic_to(x0, y0 + c, x0 + c, y0, x0 + k, y0);
-    pb.close();
-    pb.finish()
+    crate::export::path(&crate::doc::rect_path(r, radius))
 }
 
 fn apply_round_mask(p: &mut Pixmap, r: R, radius: f32) {
@@ -348,12 +323,12 @@ fn rgb3(c: u32) -> [f32; 3] {
     [(c >> 16) & 255, (c >> 8) & 255, c & 255].map(|v| v as f32)
 }
 
-/// Renders a fill as an opaque RGBA pixmap.
-pub fn render_fill(fill: &Fill, w: u32, h: u32) -> Pixmap {
+/// Renders a fill as an opaque RGBA pixmap; a picture is read at most `max_side` large (see `source`).
+fn render_fill(fill: &Fill, w: u32, h: u32, max_side: u32) -> Pixmap {
     if let Fill::Image(path, blur) = fill {
-        return match source(path, 0) {
+        return match source(path, max_side) {
             Some(src) => cover(&src, w, h, *blur),
-            None => render_fill(&Fill::Gradient(PALETTES[1], Kind::Mesh), w, h),
+            None => render_fill(&Fill::Gradient(PALETTES[1], Kind::Mesh), w, h, 0),
         };
     }
     let mut p = Pixmap::new(w.max(1), h.max(1)).expect("backdrop size");
@@ -497,14 +472,7 @@ fn background_image(fill: &Fill, aspect: f32, window: &mut Window) -> Arc<Render
         {
             return img.clone();
         }
-        let p = match fill {
-            Fill::Image(path, blur) => match source(path, 1024) {
-                Some(src) => cover(&src, size.0, size.1, *blur),
-                None => render_fill(&Fill::Gradient(PALETTES[1], Kind::Mesh), size.0, size.1),
-            },
-            _ => render_fill(fill, size.0, size.1),
-        };
-        let mut bgra = p.take();
+        let mut bgra = render_fill(fill, size.0, size.1, 1024).take();
         for px in bgra.chunks_exact_mut(4) {
             px.swap(0, 2);
         }
@@ -514,21 +482,6 @@ fn background_image(fill: &Fill, aspect: f32, window: &mut Window) -> Arc<Render
         }
         img
     })
-}
-
-pub fn toggle(editor: &mut Editor, window: &mut Window, cx: &mut Context<Editor>) {
-    let next = match editor.backdrop.take() {
-        None => {
-            let mut b = crate::settings::get(cx).backdrop.clone().unwrap_or_default();
-            b.panel_open = true;
-            Some(b)
-        }
-        Some(mut b) => {
-            b.panel_open = !b.panel_open;
-            Some(b)
-        }
-    };
-    editor.set_backdrop(next, window, cx);
 }
 
 /// The side panel, rebuilt from the editor's backdrop each render.
@@ -688,11 +641,9 @@ impl Panel {
         let fill = self.editor.update(cx, |editor, cx| {
             let mut b = editor.backdrop.clone()?;
             f(&mut b);
-            let mut saved = b.clone();
-            saved.panel_open = false;
-            crate::settings::update(cx, |s| s.backdrop = Some(saved));
+            crate::settings::update(cx, |s| s.backdrop = Some(b.clone()));
             let fill = b.fill.clone();
-            editor.set_backdrop(Some(b), window, cx);
+            editor.set_backdrop(Some(b), cx);
             Some(fill)
         });
         if let Ok(Some(fill)) = fill {
@@ -869,8 +820,8 @@ impl Render for Panel {
                             // Closing first makes the editor build a fresh panel, so the sliders reset too.
                             crate::settings::update(cx, |s| s.backdrop = None);
                             let _ = this.editor.update(cx, |e, cx| {
-                                e.set_backdrop(None, window, cx);
-                                e.set_backdrop(Some(Backdrop::default()), window, cx);
+                                e.set_backdrop(None, cx);
+                                e.toggle_backdrop_panel(window, cx);
                             });
                         })),
                     ),
@@ -894,8 +845,8 @@ impl Render for Panel {
                                 .label("Remove")
                                 .small()
                                 .ghost()
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    let _ = this.editor.update(cx, |e, cx| e.set_backdrop(None, window, cx));
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    let _ = this.editor.update(cx, |e, cx| e.set_backdrop(None, cx));
                                 })),
                         )
                         .child(div().flex_1())
@@ -904,7 +855,9 @@ impl Render for Panel {
                                 .label("Done")
                                 .small()
                                 .primary()
-                                .on_click(cx.listener(|this, _, window, cx| this.edit(window, cx, |b| b.panel_open = false))),
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    let _ = this.editor.update(cx, |e, cx| e.toggle_backdrop_panel(window, cx));
+                                })),
                         ),
                 ),
         )

@@ -8,7 +8,7 @@ use tiny_skia::{
     PixmapPaint, Rect, SpreadMode, Stroke, StrokeDash, Transform,
 };
 
-use crate::doc::{Ctx, LINE_HEIGHT, Object, Prim, R, Seg, Shape, paint_order, spotlight_dim};
+use crate::doc::{Ctx, LINE_HEIGHT, Object, Prim, R, Seg, scene};
 use crate::pixels;
 use crate::tiled::{PxRect, TiledImage};
 
@@ -25,7 +25,7 @@ pub struct Scene<'a> {
 pub fn render(s: &Scene) -> Pixmap {
     let c = s.canvas.round_out();
     let (w, h) = (c.w.max(1.) as u32, c.h.max(1.) as u32);
-    let base = to_pixmap(s.crop.w, s.crop.h, s.image.read(s.crop));
+    let base = bgra_pixmap(s.crop.w, s.crop.h, s.image.read(s.crop)).expect("crop size");
     let (bx, by) = (s.crop.x as f32 - c.x, s.crop.y as f32 - c.y);
     let mut pixmap = if bx == 0. && by == 0. && w == s.crop.w && h == s.crop.h {
         base
@@ -45,27 +45,10 @@ pub fn render(s: &Scene) -> Pixmap {
         canvas
     };
     let t = Transform::from_translate(-c.x, -c.y);
-    let mut dimmed = false;
-    for o in paint_order(s.objects) {
-        if !dimmed
-            && matches!(o.shape, Shape::Spotlight { .. })
-            && let Some(dim) = spotlight_dim(s.objects, c)
-        {
-            dimmed = true;
-            draw(&mut pixmap, &dim, s.image, t, c);
-        }
-        for prim in o.prims(s.cx) {
-            draw(&mut pixmap, &prim, s.image, t, c);
-        }
+    for prim in scene(s.objects, s.cx, c) {
+        draw(&mut pixmap, &prim, s.image, t, c);
     }
     pixmap
-}
-
-fn to_pixmap(w: u32, h: u32, mut bgra: Vec<u8>) -> Pixmap {
-    for px in bgra.chunks_exact_mut(4) {
-        px.swap(0, 2);
-    }
-    Pixmap::from_vec(bgra, IntSize::from_wh(w.max(1), h.max(1)).expect("size")).expect("buffer")
 }
 
 fn color(rgb: u32, alpha: f32) -> tiny_skia::Color {
@@ -77,7 +60,7 @@ fn color(rgb: u32, alpha: f32) -> tiny_skia::Color {
     )
 }
 
-fn path(segs: &[Seg]) -> Option<tiny_skia::Path> {
+pub fn path(segs: &[Seg]) -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
     for s in segs {
         match *s {
@@ -110,13 +93,11 @@ pub fn highlight_patch(image: &TiledImage, fill: Option<u32>, segs: &[Seg], widt
     if let Some(f) = fill {
         pm.fill(color(f, 1.));
     }
-    if let Some(i) = r.intersect(&R::new(0., 0., image.width as f32, image.height as f32)) {
-        let src = PxRect { x: i.x as u32, y: i.y as u32, w: i.w as u32, h: i.h as u32 };
-        if src.w > 0 && src.h > 0 {
-            let base = to_pixmap(src.w, src.h, image.read(src));
-            let at = ((i.x - r.x) as i32, (i.y - r.y) as i32);
-            pm.draw_pixmap(at.0, at.1, base.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
-        }
+    if let Some(src) = pixels::clamp(image, r)
+        && let Some(base) = bgra_pixmap(src.w, src.h, image.read(src))
+    {
+        let at = (src.x as i32 - r.x as i32, src.y as i32 - r.y as i32);
+        pm.draw_pixmap(at.0, at.1, base.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
     }
     let mut mask = Mask::new(w, h)?;
     let outline = path(segs)?.stroke(&marker(width), 1.)?;
@@ -162,12 +143,11 @@ fn draw(pixmap: &mut Pixmap, prim: &Prim, image: &TiledImage, t: Transform, canv
             path: segs,
             width,
             color: c,
-            alpha,
             dash,
         } => {
             if let Some(p) = path(segs) {
                 let mut paint = Paint::default();
-                paint.set_color(color(*c, *alpha));
+                paint.set_color(color(*c, 1.));
                 paint.anti_alias = true;
                 let stroke = Stroke {
                     width: *width,
@@ -204,14 +184,9 @@ fn draw(pixmap: &mut Pixmap, prim: &Prim, image: &TiledImage, t: Transform, canv
             }
         }
         Prim::Image { src, rect, radius, alpha, .. } => {
-            let mut rgba = src.0.bgra.clone();
-            for px in rgba.chunks_exact_mut(4) {
-                px.swap(0, 2);
-            }
-            let (Some(size), Some(p)) = (IntSize::from_wh(src.0.w, src.0.h), path(&crate::doc::rect_path(*rect, *radius))) else {
+            let (Some(img), Some(p)) = (bgra_pixmap(src.0.w, src.0.h, src.0.bgra.clone()), path(&crate::doc::rect_path(*rect, *radius))) else {
                 return;
             };
-            let Some(img) = Pixmap::from_vec(rgba, size) else { return };
             let fit = Transform::from_row(rect.w / src.0.w as f32, 0., 0., rect.h / src.0.h as f32, rect.x, rect.y);
             let mut paint = Paint::default();
             paint.anti_alias = true;
@@ -219,8 +194,9 @@ fn draw(pixmap: &mut Pixmap, prim: &Prim, image: &TiledImage, t: Transform, canv
             pixmap.fill_path(&p, &paint, FillRule::Winding, t, None);
         }
         Prim::Pixels { op, rect, .. } => {
-            if let Some(patch) = pixels::patch(image, *op, *rect) {
-                let img = to_pixmap(patch.w, patch.h, patch.bgra);
+            if let Some(patch) = pixels::patch(image, *op, *rect)
+                && let Some(img) = bgra_pixmap(patch.w, patch.h, patch.bgra)
+            {
                 pixmap.draw_pixmap(
                     (patch.at.x - canvas.x).round() as i32,
                     (patch.at.y - canvas.y).round() as i32,
@@ -307,7 +283,7 @@ pub fn downscale(pixmap: &Pixmap, scale: f32) -> Pixmap {
     let Some(mut out) = Pixmap::new(w, h) else {
         return pixmap.clone();
     };
-    let paint = tiny_skia::PixmapPaint { quality: tiny_skia::FilterQuality::Bicubic, ..Default::default() };
+    let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..Default::default() };
     out.draw_pixmap(0, 0, pixmap.as_ref(), &paint, Transform::from_scale(1. / scale, 1. / scale), None);
     out
 }
@@ -321,19 +297,32 @@ pub fn bgra_pixmap(w: u32, h: u32, mut bgra: Vec<u8>) -> Option<Pixmap> {
     for p in bgra.chunks_exact_mut(4) {
         p.swap(0, 2);
     }
-    tiny_skia::IntSize::from_wh(w, h).and_then(|size| Pixmap::from_vec(bgra, size))
+    IntSize::from_wh(w, h).and_then(|size| Pixmap::from_vec(bgra, size))
 }
 
-/// Decodes a PNG or JPEG into BGRA plus its pixels-per-point, read from the PNG's
+/// Decodes a PNG or JPEG into tiles plus its pixels-per-point, read from the PNG's
 /// density so Retina screenshots reopen at their real size.
-pub fn decode(bytes: &[u8]) -> Option<(crate::tiled::TiledImage, f32)> {
-    let (w, h, mut rgba, scale) = decode_rgba(bytes)?;
-    for p in rgba.chunks_exact_mut(4) {
-        p.swap(0, 2);
-    }
-    Some((crate::tiled::TiledImage::from_bgra(w, h, &rgba, (w * 4) as usize), scale))
+pub fn decode(bytes: &[u8]) -> Option<(TiledImage, f32)> {
+    let (w, h, bgra, scale) = decode_bgra(bytes)?;
+    Some((TiledImage::from_bgra(w, h, &bgra), scale))
 }
 
+/// Premultiplied BGRA, as the document keeps its pixels.
+pub fn decode_bgra(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>, f32)> {
+    let (w, h, mut px, scale) = decode_rgba(bytes)?;
+    for p in px.chunks_exact_mut(4) {
+        p.swap(0, 2);
+        let a = p[3] as u32;
+        if a < 255 {
+            for c in &mut p[..3] {
+                *c = ((*c as u32 * a + 127) / 255) as u8;
+            }
+        }
+    }
+    Some((w, h, px, scale))
+}
+
+/// Straight-alpha RGBA.
 pub fn decode_rgba(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>, f32)> {
     decode_png(bytes).or_else(|| {
         let img = image::load_from_memory(bytes).ok()?.to_rgba8();
@@ -398,6 +387,13 @@ mod tests {
             px.copy_from_slice(&[v.min(alpha), v.min(alpha), v.min(alpha), alpha]);
         }
         p
+    }
+
+    #[test]
+    fn translucent_pixels_survive_a_round_trip() {
+        let premultiplied = [50, 25, 10, 128];
+        let png = encode_bgra(1, 1, premultiplied.to_vec(), 1.);
+        assert_eq!(decode_bgra(&png).unwrap().2, premultiplied);
     }
 
     #[test]

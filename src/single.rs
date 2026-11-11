@@ -104,7 +104,7 @@ pub fn listen(tx: UnboundedSender<Command>) {
             let line = line.trim_end_matches('\n');
             let command = match line.split_once(' ') {
                 _ if line == "quit" => Command::Quit,
-                Some(("open", path)) => Command::Open(path.into(), false),
+                Some(("open", path)) => Command::Open(path.into()),
                 Some(("capture", rest)) => {
                     let (name, then) = match rest.split_once(" then=") {
                         Some((name, list)) => (name, Then::parse(list).ok()),

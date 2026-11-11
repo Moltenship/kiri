@@ -8,9 +8,6 @@ fn main() {
 fn windows_resources() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=windows/Kiri.ico");
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
-        return;
-    }
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let numbers: Vec<&str> = version.split(['.', '-']).take(3).collect();
     let numbers = format!("{},0", numbers.join(","));

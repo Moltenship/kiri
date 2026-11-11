@@ -69,7 +69,6 @@ gpui_kit::assets::icon_assets!(
         Flashlight,
         Grid3x3,
         GripVertical,
-        Hand,
         Highlighter,
         Image,
         Keyboard,
@@ -154,10 +153,9 @@ enum Command {
     CheckForUpdates,
     Cancel,
     OpenFile,
-    Open(PathBuf, bool),
+    Open(PathBuf),
     Paste,
     CloseAllPins,
-    StressTest,
     /// A capture asked for by `kiri --capture`, which any local process can run.
     Automation(Capture, Option<single::Then>),
     ToggleLaunchAtLogin,
@@ -258,6 +256,24 @@ pub fn reload_hotkeys(cx: &mut App) -> Vec<String> {
     failed
 }
 
+/// `reload_hotkeys`, with one toast for the shortcuts the system refused.
+pub fn rebind_hotkeys(cx: &mut App) {
+    let failed: Vec<String> = reload_hotkeys(cx).iter().map(|keys| settings_window::pretty(keys)).collect();
+    match &failed[..] {
+        [] => {}
+        [one] => toast::show(format!("{one} is taken by another app"), cx),
+        all => toast::show(format!("{} are taken by other apps", all.join(", ")), cx),
+    }
+    refresh_tray(cx);
+}
+
+pub fn set_launch_at_login(on: bool, cx: &mut App) {
+    if let Err(err) = settings::set_launch_at_login(on) {
+        toast::show(format!("Couldn't change login item: {err}"), cx);
+    }
+    refresh_tray(cx);
+}
+
 fn load_theme(cx: &mut App) {
     let set: gpui_kit::component::theme::ThemeSet =
         serde_json::from_str(include_str!("theme.json")).expect("theme.json is valid");
@@ -276,7 +292,7 @@ fn load_theme(cx: &mut App) {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let arg = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
-    let (open, demo, thumbnail) = (arg("--open"), arg("--demo"), args.iter().any(|a| a == "--thumbnail"));
+    let open = arg("--open");
     let capture = match arg("--capture") {
         Some(name) => match Capture::from_cli(&name) {
             Some(c) => Some(c),
@@ -300,7 +316,7 @@ fn main() {
     }
     #[cfg(windows)]
     win::dpi_aware();
-    if demo.is_none() && single::forward(open.as_deref().map(std::path::Path::new), capture) {
+    if single::forward(open.as_deref().map(std::path::Path::new), capture) {
         return;
     }
     gpui_kit::application().with_assets(KiriAssets).run(move |cx| {
@@ -318,25 +334,12 @@ fn main() {
         settings_window::bind_keys(cx);
 
         let (tx, mut rx) = mpsc::unbounded();
-        // `--demo <capture>` or `--open <file>` runs one command at launch, for scripted checks.
         if let Some(file) = open {
-            let _ = tx.unbounded_send(Command::Open(file.into(), thumbnail));
+            let _ = tx.unbounded_send(Command::Open(file.into()));
         }
-        let demo = match demo.as_deref() {
-            Some("area") => Some(Command::Capture(Capture::Area, Instant::now())),
-            Some("screen") => Some(Command::Capture(Capture::Fullscreen, Instant::now())),
-            Some("window") => Some(Command::Capture(Capture::Window, Instant::now())),
-            Some("settings") => Some(Command::Capture(Capture::Settings, Instant::now())),
-            Some("welcome") => Some(Command::Welcome),
-            Some("stress") => Some(Command::StressTest),
-            _ => None,
-        };
         // The welcome window walks through permissions and shortcuts.
         if first_launch && capture.is_none() {
             let _ = tx.unbounded_send(Command::Welcome);
-        }
-        if let Some(demo) = demo {
-            let _ = tx.unbounded_send(demo);
         }
         if let Some((capture, then)) = capture {
             let _ = tx.unbounded_send(Command::Automation(capture, then));
@@ -535,13 +538,12 @@ fn handle(command: Command, cx: &mut App) {
                 if let Ok(Ok(Some(paths))) = rx.await
                     && let Some(path) = paths.into_iter().next()
                 {
-                    cx.update(|cx| handle(Command::Open(path, false), cx));
+                    cx.update(|cx| handle(Command::Open(path), cx));
                 }
             })
             .detach();
         }
-        Command::Open(path, thumbnail) => match std::fs::read(&path).ok().and_then(|b| export::decode(&b)) {
-            Some((image, scale)) if thumbnail => preview::open(image, scale, None, None, cx),
+        Command::Open(path) => match std::fs::read(&path).ok().and_then(|b| export::decode(&b)) {
             Some((image, scale)) => editor::open(image, scale, None, Some(path), cx),
             None => toast::show("Couldn't open that image", cx),
         },
@@ -562,25 +564,8 @@ fn handle(command: Command, cx: &mut App) {
             }
         }
         Command::CloseAllPins => pin::close_all(cx),
-        Command::StressTest => {
-            cx.spawn(async move |cx| {
-                let image = cx
-                    .background_executor()
-                    .spawn(async { stress_image(2880, 24_000) })
-                    .await;
-                cx.update(|cx| editor::open(image, 2., None, None, cx));
-            })
-            .detach();
-        }
-        Command::ToggleLaunchAtLogin => {
-            if let Err(err) = settings::set_launch_at_login(!settings::launch_at_login()) {
-                toast::show(format!("Couldn't change login item: {err}"), cx);
-            }
-            refresh_tray(cx);
-        }
-        Command::Menu(id) => {
-            pin::menu_event(&id, cx);
-        }
+        Command::ToggleLaunchAtLogin => set_launch_at_login(!settings::launch_at_login(), cx),
+        Command::Menu(id) => pin::menu_event(&id, cx),
         Command::CheckForUpdates => match cx.default_global::<update::Update>().available.is_some() {
             true => update::install(cx),
             false => update::check(true, cx),
@@ -612,18 +597,13 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
         }
         Capture::Window => start_overlay(overlay::Mode::Window, at, None, cx),
         Capture::RepeatArea => match overlay::last_area(cx) {
-            Some((display, rect)) => {
-                cx.spawn(async move |cx| {
-                    if let Some(shot) = mac::capture_display(display).await {
-                        let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra, (shot.width * 4) as usize);
-                        drop(shot.bgra);
-                        let Some(rect) = rect.clamp_to(image.width, image.height) else { return };
-                        let cropped = TiledImage::from_bgra(rect.w, rect.h, &image.read(rect), (rect.w * 4) as usize);
-                        cx.update(|cx| deliver(cropped, shot.scale, Some(display), cx));
+            Some((display, area)) => cx
+                .spawn(async move |cx| {
+                    if let Some(shot) = mac::capture_area(display, area).await {
+                        cx.update(|cx| deliver_shot(shot, cx));
                     }
                 })
-                .detach();
-            }
+                .detach(),
             None => {
                 toast::show("No area to repeat yet. Select one now", cx);
                 select_area(at, cx);
@@ -650,7 +630,7 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
         Capture::ActiveWindow => {
             let (background, color) = window_style(cx);
             cx.spawn(async move |cx| {
-                let shot = match window_capture::frontmost_window().await {
+                let shot = match window_capture::frontmost_window() {
                     Some(w) => window_capture::capture(w.id, background, color).await,
                     None => None,
                 };
@@ -671,8 +651,7 @@ pub fn window_style(cx: &App) -> (settings::WindowBackground, u32) {
 }
 
 fn select_area(at: Instant, cx: &mut App) {
-    // Windows has no system selection to hand off to.
-    if cfg!(windows) || settings::get(cx).area_selection == settings::AreaSelection::Kiri {
+    if settings::get(cx).kiri_selects() {
         return start_overlay(overlay::Mode::Area, at, None, cx);
     }
     static SELECTING: AtomicBool = AtomicBool::new(false);
@@ -702,10 +681,10 @@ fn select_area(at: Instant, cx: &mut App) {
 fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandle>, cx: &mut App) {
     let displays: Vec<u32> = cx.displays().iter().map(|d| u64::from(d.id()) as u32).collect();
     let s = settings::get(cx);
-    let freeze = s.freeze_screen && (cfg!(windows) || s.area_selection == settings::AreaSelection::Kiri);
+    let freeze = s.freeze_screen && s.kiri_selects();
     cx.spawn(async move |cx| {
         let windows = match mode {
-            overlay::Mode::Window | overlay::Mode::Area => window_capture::list_windows().await,
+            overlay::Mode::Window | overlay::Mode::Area => window_capture::list_windows(),
             _ => Vec::new(),
         };
         let screens: Vec<_> = if freeze {
@@ -823,7 +802,7 @@ pub fn apply_appearance(cx: &mut App) {
 }
 
 pub fn deliver_shot(shot: mac::Shot, cx: &mut App) {
-    let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra, (shot.width * 4) as usize);
+    let image = TiledImage::from_bgra(shot.width, shot.height, &shot.bgra);
     let (scale, display) = (shot.scale, (shot.display != 0).then_some(shot.display));
     drop(shot.bgra);
     deliver(image, scale, display, cx);
@@ -882,39 +861,6 @@ pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App
     .detach();
 }
 
-/// A tall synthetic page: gradient bands, a 100 px grid, and a ruler stripe.
-fn stress_image(w: u32, h: u32) -> TiledImage {
-    let mut bgra = vec![0u8; (w * h * 4) as usize];
-    for (y, row) in bgra.chunks_exact_mut((w * 4) as usize).enumerate() {
-        let y = y as u32;
-        let band = (y / 1000) % 6;
-        let t = (y % 1000) as f32 / 1000.;
-        let base: [f32; 3] = [
-            [255., 240., 230.],
-            [230., 245., 255.],
-            [235., 255., 235.],
-            [255., 250., 220.],
-            [245., 235., 255.],
-            [240., 240., 240.],
-        ][band as usize];
-        for (x, px) in row.chunks_exact_mut(4).enumerate() {
-            let x = x as u32;
-            let shade = 1. - 0.12 * t - 0.06 * (x as f32 / w as f32);
-            let mut c = base.map(|v| (v * shade) as u8);
-            if x % 100 == 0 || y % 100 == 0 {
-                c = [190, 195, 205];
-            }
-            if x < 40 && y % 1000 < 12 {
-                c = [30, 30, 30];
-            }
-            px.copy_from_slice(&[c[2], c[1], c[0], 255]);
-        }
-    }
-    TiledImage::from_bgra(w, h, &bgra, (w * 4) as usize)
-}
-
-/// Viewfinder corners, drawn at 2× for the 18 pt menu bar slot.
-/// The app icon reduced to a template: a selection with handles around a peak and the sun.
 /// The update item's mark, matching the dot on the menu bar icon.
 fn red_dot() -> tray_icon::menu::Icon {
     let n = 32;
@@ -925,19 +871,12 @@ fn red_dot() -> tray_icon::menu::Icon {
     if let Some(dot) = tiny_skia::PathBuilder::from_circle(16., 16., 7.) {
         pixmap.fill_path(&dot, &paint, tiny_skia::FillRule::Winding, tiny_skia::Transform::identity(), None);
     }
-    // Premultiplied to straight alpha; the edge pixels are the only partly transparent ones.
-    let mut rgba = pixmap.take();
-    for px in rgba.chunks_exact_mut(4) {
-        if let a @ 1..=254 = px[3] {
-            for c in &mut px[..3] {
-                *c = (*c as u32 * 255 / a as u32) as u8;
-            }
-        }
-    }
-    tray_icon::menu::Icon::from_rgba(rgba, n, n).expect("dot icon")
+    tray_icon::menu::Icon::from_rgba(pixmap.take_demultiplied(), n, n).expect("dot icon")
 }
 
-/// `badge` marks an available update; macOS adds it as a subview, since a template takes no color.
+/// The app icon reduced to a template, drawn at 2× for the 18 pt menu bar slot: a selection with
+/// handles around a peak and the sun. `badge` marks an available update; macOS adds it as a
+/// subview, since a template takes no color.
 fn tray_glyph(badge: bool) -> tray_icon::Icon {
     use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
     let n = 36;
@@ -970,5 +909,5 @@ fn tray_glyph(badge: bool) -> tray_icon::Icon {
         let dot = PathBuilder::from_circle(0.86, 0.82, 0.13).expect("badge");
         pixmap.fill_path(&dot, &paint, FillRule::Winding, unit, None);
     }
-    tray_icon::Icon::from_rgba(pixmap.take(), n, n).expect("icon rgba")
+    tray_icon::Icon::from_rgba(pixmap.take_demultiplied(), n, n).expect("icon rgba")
 }

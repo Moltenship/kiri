@@ -26,10 +26,6 @@ pub struct PxRect {
 }
 
 impl PxRect {
-    pub fn clamp_to(self, width: u32, height: u32) -> Option<PxRect> {
-        self.intersect(PxRect { x: 0, y: 0, w: width, h: height })
-    }
-
     fn intersect(self, other: PxRect) -> Option<PxRect> {
         let x0 = self.x.max(other.x);
         let y0 = self.y.max(other.y);
@@ -45,15 +41,15 @@ impl PxRect {
 }
 
 impl TiledImage {
-    /// `bgra` is tightly packed unless `stride` says otherwise.
-    pub fn from_bgra(width: u32, height: u32, bgra: &[u8], stride: usize) -> Self {
+    /// `bgra` is tightly packed.
+    pub fn from_bgra(width: u32, height: u32, bgra: &[u8]) -> Self {
         let cols = width.div_ceil(TILE);
         let rows = height.div_ceil(TILE);
         let mut tiles = Vec::with_capacity((cols * rows) as usize);
         for row in 0..rows {
             for col in 0..cols {
                 let rect = tile_rect(width, height, col, row);
-                tiles.push(Arc::new(make_tile(rect, bgra, stride)));
+                tiles.push(Arc::new(make_tile(rect, bgra, (width * 4) as usize)));
             }
         }
         Self {

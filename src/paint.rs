@@ -82,7 +82,6 @@ pub fn prim(
             path,
             width,
             color: c,
-            alpha,
             dash,
         } => {
             let w = (width * view.k).max(0.5);
@@ -101,7 +100,7 @@ pub fn prim(
                 pb = pb.dash_array(&[px(d * view.k), px(d * 0.75 * view.k)]);
             }
             if let Some(path) = build(path, view, pb) {
-                window.paint_path(path, color(*c, *alpha));
+                window.paint_path(path, color(*c, 1.));
             }
         }
         Prim::Text {

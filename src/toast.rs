@@ -11,7 +11,6 @@ use gpui_kit::*;
 
 use crate::mac;
 
-#[derive(Default)]
 struct Current(Option<(AnyWindowHandle, Entity<Toast>)>);
 
 impl Global for Current {}
@@ -57,14 +56,9 @@ enum Style {
 /// Stays up until another toast or `hide`, and updates in place; `fraction` (0 to 1) adds a bar.
 pub fn progress(text: impl Into<SharedString>, fraction: Option<f32>, cx: &mut App) {
     let text = text.into();
-    let toast = match cx.try_global::<Current>().and_then(|c| c.0.clone()) {
-        Some((_, toast)) if toast.read(cx).style == Style::Progress => toast,
-        _ => {
-            open(text.clone(), None, Style::Progress, cx);
-            let Some((_, toast)) = cx.try_global::<Current>().and_then(|c| c.0.clone()) else { return };
-            toast
-        }
-    };
+    let shown = cx.try_global::<Current>().and_then(|c| c.0.clone()).map(|(_, toast)| toast);
+    let shown = shown.filter(|toast| toast.read(cx).style == Style::Progress);
+    let Some(toast) = shown.or_else(|| open(text.clone(), None, Style::Progress, cx)) else { return };
     toast.update(cx, |toast, cx| {
         toast.text = text;
         toast.fraction = fraction;
@@ -84,7 +78,7 @@ pub fn hide(cx: &mut App) {
     cx.set_global(Current(None));
 }
 
-fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) {
+fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) -> Option<Entity<Toast>> {
     let big = style == Style::Countdown;
     hide(cx);
     let Some(display) = cx
@@ -93,7 +87,7 @@ fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) 
         .find(|d| u64::from(d.id()) as u32 == mac::display_under_cursor())
         .or_else(|| cx.primary_display())
     else {
-        return;
+        return None;
     };
     let b = display.bounds();
     let (w, h) = if big { (px(120.), px(120.)) } else { (px(420.), px(48.)) };
@@ -119,13 +113,13 @@ fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) 
     let opened = crate::open_clear_window(options, cx, |_, cx| {
         cx.new(|_| Toast { text, action, style, fraction: None })
     });
-    let Ok((handle, toast)) = opened else { return };
+    let Ok((handle, toast)) = opened else { return None };
     let _ = handle.update(cx, |_, window, _| {
         mac::make_floating(window, mac::Level::Status, false, !clickable)
     });
-    cx.set_global(Current(Some((handle, toast))));
+    cx.set_global(Current(Some((handle, toast.clone()))));
     if style == Style::Progress {
-        return;
+        return Some(toast);
     }
     cx.spawn(async move |cx| {
         let ms = if clickable { 4000 } else { 1800 };
@@ -138,6 +132,7 @@ fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) 
         });
     })
     .detach();
+    Some(toast)
 }
 
 struct Toast {
@@ -162,9 +157,8 @@ impl Render for Toast {
                     .text_color(white())
                     .text_size(px(52.))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .max_w(px(400.))
-                .overflow_hidden()
-                .child(div().truncate().child(self.text.clone())),
+                    .overflow_hidden()
+                    .child(div().truncate().child(self.text.clone())),
             );
         }
         div().size_full().flex().items_center().justify_center().child(

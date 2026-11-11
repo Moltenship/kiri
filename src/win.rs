@@ -122,11 +122,11 @@ unsafe fn blit(r: RECT) -> Option<(u32, u32, Vec<u8>)> {
     }
     unsafe {
         let screen = GetDC(None);
-        let (bgra, ok) = dib(Some(screen), w, h, |mem| {
+        let shot = dib(Some(screen), w, h, |mem| {
             BitBlt(mem, 0, 0, w, h, Some(screen), r.left, r.top, SRCCOPY | CAPTUREBLT).is_ok()
         });
         ReleaseDC(None, screen);
-        let mut bgra = bgra.filter(|_| ok)?;
+        let Some((mut bgra, true)) = shot else { return None };
         // GDI leaves the fourth byte undefined.
         for px in bgra.chunks_exact_mut(4) {
             px[3] = 255;
@@ -136,7 +136,7 @@ unsafe fn blit(r: RECT) -> Option<(u32, u32, Vec<u8>)> {
 }
 
 /// Runs `draw` on a top-down 32-bit DIB of `w`×`h` and returns its pixels as BGRA.
-unsafe fn dib<T>(like: Option<HDC>, w: i32, h: i32, draw: impl FnOnce(HDC) -> T) -> (Option<Vec<u8>>, T) {
+unsafe fn dib<T>(like: Option<HDC>, w: i32, h: i32, draw: impl FnOnce(HDC) -> T) -> Option<(Vec<u8>, T)> {
     unsafe {
         let mem = CreateCompatibleDC(like);
         let info = BITMAPINFO {
@@ -153,9 +153,8 @@ unsafe fn dib<T>(like: Option<HDC>, w: i32, h: i32, draw: impl FnOnce(HDC) -> T)
         };
         let mut bits = std::ptr::null_mut();
         let Ok(bitmap) = CreateDIBSection(Some(mem), &info, DIB_RGB_COLORS, &mut bits, None, 0) else {
-            let out = draw(mem);
             let _ = DeleteDC(mem);
-            return (None, out);
+            return None;
         };
         let old = SelectObject(mem, bitmap.into());
         let out = draw(mem);
@@ -164,7 +163,7 @@ unsafe fn dib<T>(like: Option<HDC>, w: i32, h: i32, draw: impl FnOnce(HDC) -> T)
         SelectObject(mem, old);
         let _ = DeleteObject(bitmap.into());
         let _ = DeleteDC(mem);
-        (Some(pixels), out)
+        Some((pixels, out))
     }
 }
 
@@ -193,9 +192,7 @@ pub fn has_screenshot_cursor() -> bool {
     false
 }
 
-pub fn set_screenshot_cursor(_window: &Window, _window_pick: bool, _numbers: Option<[i32; 2]>) -> bool {
-    false
-}
+pub fn set_screenshot_cursor(_window: &Window, _window_pick: bool, _numbers: Option<[i32; 2]>) {}
 
 pub fn make_key(window: &Window) {
     if let Some(hwnd) = hwnd(window) {
@@ -207,9 +204,9 @@ pub fn option_held() -> bool {
     unsafe { GetAsyncKeyState(VK_MENU.0 as i32) < 0 }
 }
 
-/// Moves the pointer to global logical units on the monitor under it.
-pub fn warp_cursor(x: f32, y: f32) {
-    let Some((m, scale)) = monitor_rect(display_under_cursor()) else { return };
+/// Moves the pointer to global logical units on `display`.
+pub fn warp_cursor(display: u32, x: f32, y: f32) {
+    let Some((m, scale)) = monitor_rect(display) else { return };
     let at = |v: f32, origin: i32| origin + ((v - origin as f32 / scale) * scale).round() as i32;
     let _ = unsafe { SetCursorPos(at(x, m.left), at(y, m.top)) };
 }
@@ -344,9 +341,13 @@ pub fn caption_buttons(window: &Window, cx: &gpui_kit::App) -> impl gpui_kit::In
         .child(button(WindowControlArea::Close, "\u{E8BB}"))
 }
 
-/// The `HWND`, which is what a context menu needs here.
-pub fn ns_view_ptr(window: &Window) -> Option<*const c_void> {
-    hwnd(window).map(|h| h.0 as *const c_void)
+/// Shows `menu` at `(x, y)` in the window's logical units and returns once it closes.
+pub fn show_context_menu(window: &Window, menu: &tray_icon::menu::Menu, x: f32, y: f32) {
+    use tray_icon::menu::ContextMenu;
+    let Some(hwnd) = hwnd(window) else { return };
+    let at = tray_icon::menu::dpi::LogicalPosition::new(x as f64, y as f64);
+    // SAFETY: the window is alive for the whole modal menu loop.
+    unsafe { menu.show_context_menu_for_hwnd(hwnd.0 as isize, Some(at.into())) };
 }
 
 fn png_format() -> u32 {
@@ -456,13 +457,7 @@ pub fn clipboard_image() -> Option<(u32, u32, Vec<u8>, f32)> {
         let _ = CloseClipboard();
         bytes?
     };
-    let (w, h, mut px, scale) = crate::export::decode_rgba(&bytes)?;
-    for p in px.chunks_exact_mut(4) {
-        let a = p[3] as u32;
-        let [r, g, b] = [p[0], p[1], p[2]].map(|c| (c as u32 * a / 255) as u8);
-        p.copy_from_slice(&[b, g, r, a as u8]);
-    }
-    Some((w, h, px, scale))
+    crate::export::decode_bgra(&bytes)
 }
 
 /// Top-left of the display in global logical units, as GPUI places windows.
@@ -622,9 +617,9 @@ pub fn text_image(text: &str, size: f32, line_height: f32, rgb: u32, bold: bool)
             SelectObject(dc, old);
             let _ = DeleteObject(font.into());
         })
-    };
+    }?;
     let [r, g, b] = [(rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255];
-    let rgba = pixels?
+    let rgba = pixels
         .chunks_exact(4)
         .flat_map(|p| {
             let a = p[0].max(p[1]).max(p[2]) as u32;

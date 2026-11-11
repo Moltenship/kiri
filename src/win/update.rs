@@ -50,7 +50,7 @@ pub fn unpack(dir: &Path, zip: &Path) -> Result<PathBuf, String> {
 
 /// Windows lets a running exe be renamed but not replaced, so it moves aside for `staged`, and
 /// goes back if that fails. The relaunch deletes it.
-pub fn swap(staged: &Path) -> Result<(), String> {
+pub fn swap(_app: &Path, staged: &Path) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let old = old(&exe);
     let _ = std::fs::remove_file(&old);

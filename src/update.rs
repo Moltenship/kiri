@@ -70,13 +70,7 @@ pub fn start(cx: &mut App) {
 
 /// Looks for a newer release. Only a check from the menu reports what it found in a toast.
 pub fn check(manual: bool, cx: &mut App) {
-    let Some(app) = bundle() else {
-        if manual {
-            let text = crate::platform_text("Updates need Kiri.app; this build runs on its own", "Updates need Kiri from Kiri-Setup.exe or the release zip; this build runs on its own");
-            crate::toast::show(text, cx);
-        }
-        return;
-    };
+    let Some(app) = bundle() else { return };
     if let Some(why) = sys::misplaced(&app) {
         if manual {
             crate::toast::show(why, cx);
@@ -121,12 +115,13 @@ pub fn install(cx: &mut App) {
     crate::refresh_tray(cx);
     let version = release.version.clone();
     say(&version, Step::Download(None), cx);
+    let target = app.clone();
     cx.spawn(async move |cx| {
         let (tx, mut steps) = futures::channel::mpsc::unbounded();
         let work = cx.background_executor().spawn(async move {
             let staged = download(&release, &tx)?;
             let _ = tx.unbounded_send(Step::Install);
-            sys::swap(&staged)
+            sys::swap(&target, &staged)
         });
         // Ends when `work` finishes and drops `tx`.
         while let Some(step) = steps.next().await {
@@ -211,24 +206,10 @@ pub(crate) fn run(command: &mut Command) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Semver precedence, enough for `1.2.3` and `1.2.3-beta.4`: a release beats its pre-releases.
+/// Releases are plain `x.y.z` (docs/operations/release.md), so a `-suffix` is ignored.
 fn newer(a: &str, b: &str) -> bool {
-    fn key(v: &str) -> (Vec<u64>, Option<Vec<(u64, String)>>) {
-        let (core, pre) = v.split_once('-').map_or((v, None), |(c, p)| (c, Some(p)));
-        let core = core.split('.').map(|n| n.parse().unwrap_or(0)).collect();
-        // Numeric identifiers sort before alphanumeric ones, as in semver.
-        let pre = pre.map(|p| p.split('.').map(|s| s.parse().map_or((u64::MAX, s.to_string()), |n| (n, String::new()))).collect());
-        (core, pre)
-    }
-    let ((ca, pa), (cb, pb)) = (key(a), key(b));
-    match ca.cmp(&cb) {
-        std::cmp::Ordering::Equal => match (pa, pb) {
-            (None, Some(_)) => true,
-            (Some(pa), Some(pb)) => pa > pb,
-            _ => false,
-        },
-        order => order.is_gt(),
-    }
+    let key = |v: &str| v.split('-').next().unwrap_or(v).split('.').map(|n| n.parse().unwrap_or(0)).collect::<Vec<u64>>();
+    key(a) > key(b)
 }
 
 #[cfg(target_os = "macos")]
@@ -275,17 +256,16 @@ mod sys {
         Ok(staged)
     }
 
-    /// Swaps the running bundle for `staged`. The old one goes back in place if the move fails.
-    pub fn swap(staged: &Path) -> Result<(), String> {
-        let app = bundle().ok_or("not running from Kiri.app")?;
+    /// Swaps the running bundle `app` for `staged`. The old one goes back in place if the move fails.
+    pub fn swap(app: &Path, staged: &Path) -> Result<(), String> {
         let old = app.with_file_name(".Kiri.app.old");
         let _ = std::fs::remove_dir_all(&old);
-        std::fs::rename(&app, &old).map_err(|e| e.to_string())?;
-        if let Err(e) = std::fs::rename(staged, &app)
-            .or_else(|_| run(Command::new("/usr/bin/ditto").arg(staged).arg(&app)).map(drop).map_err(std::io::Error::other))
+        std::fs::rename(app, &old).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::rename(staged, app)
+            .or_else(|_| run(Command::new("/usr/bin/ditto").arg(staged).arg(app)).map(drop).map_err(std::io::Error::other))
         {
-            let _ = std::fs::remove_dir_all(&app);
-            let _ = std::fs::rename(&old, &app);
+            let _ = std::fs::remove_dir_all(app);
+            let _ = std::fs::rename(&old, app);
             return Err(e.to_string());
         }
         let _ = std::fs::remove_dir_all(&old);
@@ -304,12 +284,10 @@ mod tests {
     use super::newer;
 
     #[test]
-    fn versions_order_as_semver() {
-        assert!(newer("0.1.0", "0.1.0-beta.2"));
-        assert!(newer("0.1.0-beta.10", "0.1.0-beta.2"));
-        assert!(newer("0.2.0-beta.1", "0.1.9"));
-        assert!(newer("0.1.0-rc.1", "0.1.0-beta.3"));
-        assert!(!newer("0.1.0-beta.1", "0.1.0-beta.1"));
-        assert!(!newer("0.1.0-beta.1", "0.1.0"));
+    fn versions_compare_by_number() {
+        assert!(newer("0.2.10", "0.2.9"));
+        assert!(newer("1.0.0", "0.9.9"));
+        assert!(!newer("0.2.3", "0.2.3"));
+        assert!(!newer("0.2.2", "0.2.3"));
     }
 }
