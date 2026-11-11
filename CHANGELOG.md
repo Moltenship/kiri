@@ -2,6 +2,15 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.2.5] - 2026-11-11
+
+### Added
+- A hotkey on all four modifiers shows as ✦, the Hyper key that Raycast, Karabiner, or PowerToys can put on Caps Lock: hold it and press a key while recording.
+- Settings → Hotkeys: point at a shortcut and a × appears beside it, which clears the shortcut.
+
+### Changed
+- Settings → Hotkeys: Esc clears a shortcut while recording, as Backspace does. Click elsewhere to keep the old one.
+
 ## [0.2.4] - 2026-11-11
 
 ### Fixed
