@@ -2,6 +2,19 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.2.4] - 2026-11-11
+
+### Fixed
+- A PNG with see-through parts keeps its colors when you open it or drop it into the editor. Its translucent areas, such as a window's shadow, used to come out too bright in the copy or the saved file.
+- After Rasterize or Resize, and after undoing them, the zoomed-in view, Pixelate text, Erase text and the contrast readout follow the new image, not the old one.
+- Esc closes the backdrop panel.
+- Settings names the shortcut a hotkey clashes with in every case; some clashes showed an empty name.
+- Windows: the tray icon's edges are no longer darkened.
+
+### Changed
+- When other apps hold some of Kiri's hotkeys, one message lists them all, also after importing settings.
+- Importing settings applies the appearance and Always on top right away.
+
 ## [0.2.3] - 2026-11-07
 
 ### Fixed
