@@ -2,6 +2,23 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.2.6] - 2026-11-11
+
+### Added
+- Settings → Editor → Open with the last tool, for those who want the editor to start where they left off.
+- Windows: Settings → Hotkeys has a Print Screen opens Snipping Tool switch. Turn it off to give PrtScn to Kiri, or back on to return it to Snipping Tool, without hunting for the switch in Windows Settings, which moves between Windows releases.
+- Windows: the hotkey recorder records Print Screen, with or without modifiers.
+
+### Changed
+- The editor opens with the select tool, as in Shottr. It used to open with the arrow.
+- The active tool in the editor's toolbar is tinted with the accent color. In the dark theme it was hard to tell which tool was active.
+- The More (…) button shows only when tools don't fit the toolbar. Add Capture and Paste Image stay in the menus.
+
+### Fixed
+- Windows: dragging an image out of the editor, a pin, or the thumbnail works when the window is maximized. Dropping it back on the window it came from does nothing.
+- Windows: shortcuts with Alt+Shift record correctly when Alt+Shift switches the keyboard layout.
+- Windows: Alt+PrtScn is no longer flagged as taken by Windows.
+
 ## [0.2.5] - 2026-11-11
 
 ### Added
