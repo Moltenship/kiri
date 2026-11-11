@@ -18,6 +18,8 @@ To capture with ⇧⌘3 and ⇧⌘4 instead, pick Instead of macOS on first laun
 
 When a shortcut you give Kiri is also a macOS shortcut, macOS gets it first. Settings → Hotkeys marks that shortcut in red, names the macOS shortcut and where it is, and Open Settings takes you to Keyboard Shortcuts to turn it off.
 
+A Hyper key works in shortcuts: if Raycast, Karabiner, or a similar app makes Caps Lock hold ⌃⌥⇧⌘, hold it and press a key while recording. Kiri shows those four as ✦. To remove a shortcut, press `Esc` while recording or click the × that appears beside it.
+
 ## After a capture
 
 A capture opens the editor or a small thumbnail (Settings → General). It can also be copied or saved at once. Drag the thumbnail into another app to drop the file there.

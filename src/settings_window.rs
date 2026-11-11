@@ -541,7 +541,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
         icon: if cfg!(windows) { IconName::Keyboard } else { IconName::Command },
         groups: vec![
             Group {
-                description: Some("Click a shortcut, then press the new keys. Backspace clears it, Esc cancels."),
+                description: Some("Click a shortcut, then press the new keys. Esc clears it, a click elsewhere keeps it."),
                 ..group(None, keys)
             },
             group(
@@ -595,7 +595,26 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
         None => "Record".to_string(),
     };
     let theme = cx.theme();
-    div()
+    let group = SharedString::from(format!("hotkey-{}", capture as usize));
+    let clear = keys.is_some().then(|| {
+        div().invisible().group_hover(group.clone(), |s| s.visible()).child(
+            Button::new(("clear-hotkey", capture as usize))
+                .icon(Icon::new(IconName::X))
+                .ghost()
+                .xsmall()
+                .tooltip("Clear")
+                .on_click(move |_, window, cx| {
+                    settings::update(cx, |s| s.hotkeys.insert(capture, None));
+                    // While a recorder has the global shortcuts off, its focus-out turns them back on.
+                    if cx.try_global::<Recording>().is_some_and(|r| r.0.is_some()) {
+                        window.blur(cx);
+                    } else {
+                        crate::rebind_hotkeys(cx);
+                    }
+                }),
+        )
+    });
+    let field = div()
         .id(("hotkey", capture as usize))
         .track_focus(&focus)
         .h(px(28.))
@@ -619,8 +638,7 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
             let k = &e.keystroke;
             let mut m = k.modifiers;
             let done = match k.key.as_str() {
-                "escape" => true,
-                "backspace" | "delete" if !(m.control || m.alt || m.shift || m.platform) => {
+                key if key == "escape" || matches!(key, "backspace" | "delete") && !(m.control || m.alt || m.shift || m.platform) => {
                     settings::update(cx, |s| s.hotkeys.insert(capture, None));
                     true
                 }
@@ -659,8 +677,8 @@ fn recorder(capture: Capture, window: &mut Window, cx: &mut App) -> AnyElement {
             if done {
                 window.blur(cx);
             }
-        })
-        .into_any_element()
+        });
+    h_flex().group(group).gap_1().children(clear).child(field).into_any_element()
 }
 
 /// macOS reports Shift-9 as "(", while a global hotkey names the physical key.
@@ -673,20 +691,26 @@ fn unshift(key: &str) -> Option<&'static str> {
     PAIRS.iter().find(|(shifted, _)| *shifted == key).map(|(_, plain)| *plain)
 }
 
+/// All four modifiers at once: what a Hyper key holds down, as set up in Raycast or Karabiner.
+const HYPER: &str = "✦";
+
 pub fn pretty(keys: &str) -> String {
     if cfg!(windows) {
         return pretty_windows(keys);
     }
-    keys.split('+')
-        .map(|part| match part {
-            "ctrl" => "⌃".to_string(),
-            "alt" => "⌥".to_string(),
-            "shift" => "⇧".to_string(),
-            "cmd" => "⌘".to_string(),
-            "space" => " Space".to_string(),
-            key => key.to_uppercase(),
-        })
-        .collect()
+    const MODIFIERS: [(&str, &str); 4] = [("ctrl", "⌃"), ("alt", "⌥"), ("shift", "⇧"), ("cmd", "⌘")];
+    let parts: Vec<&str> = keys.split('+').collect();
+    let hyper = MODIFIERS.iter().all(|(name, _)| parts.contains(name));
+    let mut text = if hyper { HYPER.to_string() } else { String::new() };
+    for part in parts {
+        match MODIFIERS.iter().find(|(name, _)| *name == part) {
+            Some(_) if hyper => {}
+            Some((_, symbol)) => text.push_str(symbol),
+            None if part == "space" => text.push_str(" Space"),
+            None => text.push_str(&part.to_uppercase()),
+        }
+    }
+    text
 }
 
 /// As Windows writes shortcuts: "Win+Ctrl+Shift+2", "PrtScn".
@@ -702,13 +726,10 @@ fn pretty_windows(keys: &str) -> String {
         "pagedown" => "Page Down".to_string(),
         k => k[..1].to_uppercase() + &k[1..],
     });
-    MODIFIERS
-        .iter()
-        .filter(|(names, _)| parts.iter().any(|p| names.contains(&p.as_str())))
-        .map(|(_, name)| name.to_string())
-        .chain(key)
-        .collect::<Vec<_>>()
-        .join("+")
+    let held: Vec<&str> =
+        MODIFIERS.iter().filter(|(names, _)| parts.iter().any(|p| names.contains(&p.as_str()))).map(|(_, name)| *name).collect();
+    let held = if held.len() == MODIFIERS.len() { vec![HYPER] } else { held };
+    held.into_iter().map(str::to_string).chain(key).collect::<Vec<_>>().join("+")
 }
 
 fn advanced(cx: &App) -> Page {
@@ -1151,5 +1172,15 @@ mod tests {
         assert_eq!(super::pretty_windows("super+alt+o"), "Win+Alt+O");
         assert_eq!(super::pretty_windows("shift+printscreen"), "Shift+PrtScn");
         assert_eq!(super::pretty_windows("ctrl+f5"), "Ctrl+F5");
+        assert_eq!(super::pretty_windows("ctrl+alt+shift+super+b"), "✦+B");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn all_four_modifiers_are_the_hyper_key() {
+        assert_eq!(super::pretty("ctrl+alt+shift+cmd+b"), "✦B");
+        assert_eq!(super::pretty("shift+cmd+alt+ctrl+space"), "✦ Space");
+        assert_eq!(super::pretty("ctrl+alt+cmd+o"), "⌃⌥⌘O");
+        assert_eq!(super::pretty("shift+cmd+2"), "⇧⌘2");
     }
 }
