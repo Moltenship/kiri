@@ -9,8 +9,8 @@ use windows::core::{PCWSTR, w};
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemShortcut {
     pub name: String,
-    /// The page of Windows Settings that turns it off, as "Accessibility › Keyboard"; empty when none does.
-    pub section: String,
+    /// The switch in Kiri's Hotkeys settings that frees it; Windows has none for the rest.
+    pub switch: Option<&'static str>,
     /// As Kiri stores hotkeys; `*` stands for any letter or digit, `#` for any digit.
     keys: &'static str,
 }
@@ -19,8 +19,8 @@ pub struct SystemShortcut {
 const RESERVED: &[(&str, &str)] = &[
     ("super+shift+s", "Snipping Tool"),
     ("super+shift+r", "Snipping Tool recording"),
+    // Alt+PrtScn isn't one: Windows copies the active window only while no app registered the key.
     ("super+printscreen", "Save a screenshot to Pictures"),
-    ("alt+printscreen", "Copy the active window"),
     ("alt+super+printscreen", "Game Bar screenshot"),
     ("alt+super+r", "Game Bar recording"),
     ("ctrl+shift+escape", "Task Manager"),
@@ -34,15 +34,15 @@ const RESERVED: &[(&str, &str)] = &[
     ("super+*", "Windows key shortcuts"),
 ];
 
-const KEYBOARD: &str = "Accessibility › Keyboard";
+pub const SNIPPING_SWITCH: &str = "Print Screen opens Snipping Tool";
 
 pub fn system_shortcuts() -> Vec<SystemShortcut> {
     let snipping = snipping_on_print_screen().then(|| SystemShortcut {
         name: "Snipping Tool".into(),
-        section: KEYBOARD.into(),
+        switch: Some(SNIPPING_SWITCH),
         keys: "printscreen",
     });
-    let reserved = RESERVED.iter().map(|&(keys, name)| SystemShortcut { name: name.into(), section: String::new(), keys });
+    let reserved = RESERVED.iter().map(|&(keys, name)| SystemShortcut { name: name.into(), switch: None, keys });
     snipping.into_iter().chain(reserved).collect()
 }
 
@@ -88,6 +88,31 @@ pub fn physical_key(typed: &str) -> Option<(&'static str, bool)> {
     Some((key_name(scan)?, shift))
 }
 
+/// The letter, digit, or punctuation key held now, by the name a hotkey takes, and whether Shift is down.
+/// Unlike `physical_key` it reads the keys, not the character, which Alt+Shift changes when it switches layouts.
+pub fn held_key() -> Option<(&'static str, bool)> {
+    const OEM: [u16; 11] = [0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0, 0xDB, 0xDC, 0xDD, 0xDE];
+    let down = |vk: u16| unsafe { GetKeyState(vk as i32) } < 0;
+    let key = (0x30..=0x39).chain(0x41..=0x5A).chain(OEM).filter(|&vk| down(vk)).find_map(|vk| key_name(vk as i16))?;
+    Some((key, down(VK_SHIFT.0)))
+}
+
+/// Print Screen with the modifiers held, as Kiri stores hotkeys, when it is down or was pressed
+/// since the last call. Windows posts no key-down for it, so a recorder polls this.
+pub fn print_screen_pressed() -> Option<String> {
+    let state = |vk: VIRTUAL_KEY| unsafe { GetAsyncKeyState(vk.0 as i32) };
+    if state(VK_SNAPSHOT) as u16 & 0x8001 == 0 {
+        return None;
+    }
+    let down = |vk: VIRTUAL_KEY| state(vk) < 0;
+    let mut keys: Vec<&str> = [(VK_CONTROL, "ctrl"), (VK_MENU, "alt"), (VK_SHIFT, "shift")].into_iter().filter(|&(vk, _)| down(vk)).map(|(_, name)| name).collect();
+    if down(VK_LWIN) || down(VK_RWIN) {
+        keys.push("super");
+    }
+    keys.push("printscreen");
+    Some(keys.join("+"))
+}
+
 /// Names the virtual key of a `VkKeyScanExW` result. Hotkeys name keys as on the US layout, as virtual keys do.
 fn key_name(scan: i16) -> Option<&'static str> {
     const DIGITS: &str = "0123456789";
@@ -108,7 +133,7 @@ fn key_name(scan: i16) -> Option<&'static str> {
 }
 
 /// Windows 11 opens Snipping Tool on Print Screen unless the user turned that off.
-fn snipping_on_print_screen() -> bool {
+pub fn snipping_on_print_screen() -> bool {
     match read_dword(w!(r"Control Panel\Keyboard"), w!("PrintScreenKeyForSnippingEnabled")) {
         Some(on) => on != 0,
         None => windows_11(),
@@ -141,11 +166,16 @@ fn read_dword(key: PCWSTR, name: PCWSTR) -> Option<u32> {
         .then_some(value)
 }
 
-/// Turns off Snipping Tool on Print Screen, as the switch in Settings › Accessibility › Keyboard does.
 pub fn release_screenshot_keys() -> std::io::Result<()> {
-    let off = 0u32.to_le_bytes();
+    set_snipping_on_print_screen(false)
+}
+
+/// Writes the value behind Windows' "Use the Print screen key to open screen capture", whose
+/// Settings page moves between releases.
+pub fn set_snipping_on_print_screen(on: bool) -> std::io::Result<()> {
+    let value = u32::from(on).to_le_bytes();
     unsafe {
-        RegSetKeyValueW(HKEY_CURRENT_USER, w!(r"Control Panel\Keyboard"), w!("PrintScreenKeyForSnippingEnabled"), REG_DWORD.0, Some(off.as_ptr().cast()), 4)
+        RegSetKeyValueW(HKEY_CURRENT_USER, w!(r"Control Panel\Keyboard"), w!("PrintScreenKeyForSnippingEnabled"), REG_DWORD.0, Some(value.as_ptr().cast()), 4)
             .ok()
             .map_err(std::io::Error::other)?;
     }
@@ -170,7 +200,7 @@ mod tests {
     fn hotkeys_match_windows_shortcuts_whatever_the_modifier_order() {
         let all: Vec<SystemShortcut> = super::RESERVED
             .iter()
-            .map(|&(keys, name)| SystemShortcut { name: name.into(), section: String::new(), keys })
+            .map(|&(keys, name)| SystemShortcut { name: name.into(), switch: None, keys })
             .collect();
         let name = |keys| system_shortcut(&all, keys).map(|s| s.name.as_str());
         assert_eq!(name("shift+super+s"), Some("Snipping Tool"));

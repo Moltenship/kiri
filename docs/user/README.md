@@ -28,7 +28,7 @@ In the editor, `Esc` copies and closes, `⌘C` does the same, and `⇧⌘C` copi
 
 ## Editing
 
-Each tool has a letter: `V` select and crop, `A` arrow, `T` text, `R` rectangle, `O` oval, `L` line, `D` pen, `H` highlighter, `C` counter, `B` blur and erase, `S` spotlight, `M` magnifier.
+The editor opens with the select tool; to start with the tool you used last, turn on Settings → Editor → Open with the last tool. Each tool has a letter: `V` select and crop, `A` arrow, `T` text, `R` rectangle, `O` oval, `L` line, `D` pen, `H` highlighter, `C` counter, `B` blur and erase, `S` spotlight, `M` magnifier.
 
 - `Shift` straightens lines and makes squares and circles. `Option` draws from the center. Holding `⌘` while drawing an arrow points it back at where you started. On Windows, `Alt` points the arrow back and `Ctrl` draws it from the center.
 - Annotations past the image edge grow the canvas. The new area takes the image's background color, or stays transparent around a window capture.
@@ -59,7 +59,7 @@ Install Kiri with `Kiri-Setup.exe` from the releases page. It installs for your 
 
 Everything in this guide works the same way, with Ctrl where macOS uses `⌘` and Alt where it uses `Option`. The differences:
 
-- The capture shortcuts are Ctrl+Shift+2 for Capture Area, Ctrl+Shift+1 for Capture Screen, and Ctrl+Shift+3 for Recognize Text or QR. Use Print Screen in Settings → Hotkeys takes PrtScn from Snipping Tool and gives it to Capture Area, and Shift+PrtScn to Capture Screen.
+- The capture shortcuts are Ctrl+Shift+2 for Capture Area, Ctrl+Shift+1 for Capture Screen, and Ctrl+Shift+3 for Recognize Text or QR. Use Print Screen in Settings → Hotkeys takes PrtScn from Snipping Tool and gives it to Capture Area, and Shift+PrtScn to Capture Screen. To give PrtScn back to Snipping Tool, turn on Print Screen opens Snipping Tool there.
 - Capture Area always uses Kiri's selection, so Freeze the screen is always available.
 - Alt while drawing an arrow points it back at where you started, and Ctrl draws it from the center.
 - Recognize Text reads the languages installed in Windows, or the one picked in Settings. Of the barcodes, only QR codes are read.

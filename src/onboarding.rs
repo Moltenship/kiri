@@ -64,7 +64,10 @@ impl Onboarding {
         let (screen, area) = if self.replace_system { SYSTEM_KEYS } else { BESIDE };
         crate::settings_window::set_capture_keys((screen, area), cx);
         if let Some(fix) = [screen, area].into_iter().find_map(|keys| crate::settings_window::system_conflict(keys, cx)) {
-            crate::toast::with_action(fix, "Open", |cx| cx.open_url(crate::settings_window::KEYBOARD_SETTINGS), cx);
+            match crate::settings_window::KEYBOARD_SETTINGS {
+                Some(url) => crate::toast::with_action(fix, "Open", move |cx| cx.open_url(url), cx),
+                None => crate::toast::show(fix, cx),
+            }
         }
         crate::rebind_hotkeys(cx);
         window.remove_window();

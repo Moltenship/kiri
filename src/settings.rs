@@ -247,6 +247,9 @@ pub struct Settings {
     /// Save writes a JPEG instead of a PNG when that is smaller.
     pub save_auto_jpeg: bool,
     pub editor_on_top: bool,
+    /// The editor opens with `last_tool` instead of Select.
+    pub reopen_last_tool: bool,
+    pub last_tool: Tool,
     /// The "Saved" toast; errors show regardless.
     pub confirmations: bool,
     pub cmd_q: CmdQ,
@@ -293,6 +296,8 @@ impl Default for Settings {
             downscale_retina: false,
             save_auto_jpeg: true,
             editor_on_top: false,
+            reopen_last_tool: false,
+            last_tool: Tool::Select,
             confirmations: true,
             cmd_q: CmdQ::Ask,
             unit_px: false,

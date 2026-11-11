@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::popover::{Popover, PopoverState};
@@ -659,7 +659,10 @@ impl Editor {
             undo: Vec::new(),
             redo: Vec::new(),
             pending: None,
-            tool: Tool::Arrow,
+            tool: match settings::get(cx) {
+                s if s.reopen_last_tool => s.last_tool,
+                _ => Tool::Select,
+            },
             styles,
             selected: None,
             selection: None,
@@ -933,6 +936,9 @@ impl Editor {
     fn set_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
         self.finish_text();
         self.tool = tool;
+        if settings::get(cx).last_tool != tool {
+            settings::update(cx, |s| s.last_tool = tool);
+        }
         self.selected = None;
         if tool != Tool::Select {
             self.selection = None;
@@ -2029,6 +2035,10 @@ impl Editor {
     }
 
     fn drop_files(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(windows)]
+        if mac::dragging_out_of(window.window_handle().window_id()) {
+            return;
+        }
         let image = paths.paths().iter().find_map(|p| std::fs::read(p).ok().and_then(|b| export::decode_bgra(&b)));
         let Some((w, h, bgra, ppp)) = image else {
             return self.show_toast("Couldn't open that image", None, cx);
@@ -2383,20 +2393,18 @@ impl Render for DragGhost {
 }
 
 pub trait DragFileOut: StatefulInteractiveElement + Sized {
-    /// Makes the element a drag handle that offers `view`'s PNG as a file to other apps once the drag leaves the window.
+    /// Makes the element a drag handle that offers `view`'s PNG as a file to other apps.
     fn drag_file_out<V: 'static>(self, view: WeakEntity<V>, png: impl Fn(&V, &App) -> Vec<u8> + 'static) -> Self {
         let path = move |view: &WeakEntity<V>, cx: &App| write_temp(&png(view.upgrade()?.read(cx), cx), &settings::get(cx).file_name);
         let this = self.on_drag(view, |_, _, _, cx| cx.new(|_| DragGhost));
-        // GPUI hands a drag to the platform only on macOS.
+        // GPUI hands a drag to the platform only on macOS. The shell's drag starts at once,
+        // since a maximized window has no edge to leave by.
         #[cfg(windows)]
         return this.on_drag_move(move |e: &DragMoveEvent<WeakEntity<V>>, window, cx| {
-            if Bounds::new(Point::default(), window.viewport_size()).contains(&e.event.position) {
-                return;
-            }
             let file = path(e.drag(cx), cx);
             cx.stop_active_drag(window);
             if let Some(file) = file {
-                mac::drag_file_out(file, cx);
+                mac::drag_file_out(file, window.window_handle().window_id(), cx);
             }
         });
         #[cfg(not(windows))]
@@ -2676,16 +2684,21 @@ impl Editor {
                 .flex_wrap()
                 .overflow_hidden()
                 .gap(px(2.))
-                .on_children_prepainted(move |bounds, _, _| {
+                .on_children_prepainted(move |bounds, window, _| {
                     let fit = bounds.iter().take_while(|b| b.origin.y == bounds[0].origin.y).count();
                     // The ruler hint sits after Text and isn't a tool.
-                    shown.set(if fit > 3 { fit - 1 } else { fit });
+                    let fit = if fit > 3 { fit - 1 } else { fit };
+                    // More shows or hides on the next frame, which changes what fits. Refresh is ignored mid-draw.
+                    if shown.replace(fit) != fit {
+                        window.request_animation_frame();
+                    }
                 })
                 .children(TOOLS.into_iter().flat_map(|tool| {
                     let button = Button::new(("tool", tool as usize))
                         .icon(Icon::new(tool_icon(tool)))
                         .ghost()
                         .small()
+                        .when(self.tool == tool, |b| b.custom(active_tool(cx)))
                         .selected(self.tool == tool)
                         .tooltip_with_action(tool.name(), &SetTool(tool), Some("Editor"))
                         .on_click(cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)));
@@ -2699,7 +2712,8 @@ impl Editor {
                 .rounded(theme.radius_lg)
                 .bg(theme.muted)
                 .child(row)
-                .child({
+                // Add Capture and Paste Image are in the menus too, so More shows only for tools that don't fit.
+                .when(self.shown_tools.get() < TOOLS.len(), |d| d.child({
                     let focus = self.focus.clone();
                     let shown = self.shown_tools.clone();
                     let editor = cx.weak_entity();
@@ -2707,6 +2721,7 @@ impl Editor {
                         .icon(Icon::new(IconName::Ellipsis))
                         .ghost()
                         .small()
+                        .when(hidden, |b| b.custom(active_tool(cx)))
                         .selected(hidden)
                         .tooltip("More")
                         .dropdown_menu(move |menu, _, _| {
@@ -2725,7 +2740,7 @@ impl Editor {
                                 .menu("Add Capture", Box::new(AddCapture))
                                 .menu("Paste Image", Box::new(Paste))
                         })
-                })
+                }))
         };
 
         let zoom_pct = (self.view().k * self.scale * 100.).round();
@@ -3445,6 +3460,13 @@ fn paint_checker(bounds: Bounds<Pixels>, base: Hsla, window: &mut Window) {
 fn paint_handle(p: Point<Pixels>, accent: Hsla, window: &mut Window) {
     let b = Bounds::new(p - point(px(HANDLE), px(HANDLE)), size(px(HANDLE * 2.), px(HANDLE * 2.)));
     window.paint_quad(quad(b, px(HANDLE), gpui_kit::white(), px(1.5), accent, BorderStyle::Solid));
+}
+
+/// Ghost's selected fill is all but the toolbar's own in the dark theme, so the active tool takes the accent.
+fn active_tool(cx: &App) -> ButtonCustomVariant {
+    let theme = cx.theme();
+    let tint = theme.primary.opacity(0.22);
+    ButtonCustomVariant::new(cx).color(tint).foreground(theme.primary).hover(theme.primary.opacity(0.3)).active(tint)
 }
 
 fn ruler_hint() -> impl IntoElement {

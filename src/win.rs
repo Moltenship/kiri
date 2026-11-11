@@ -88,7 +88,10 @@ pub fn theme_window(window: &Window) {
 }
 
 mod keys;
-pub use keys::{SystemKeysOff, SystemShortcut, physical_key, release_screenshot_keys, system_shortcut, system_shortcuts};
+pub use keys::{
+    SNIPPING_SWITCH, SystemKeysOff, SystemShortcut, held_key, physical_key, print_screen_pressed, release_screenshot_keys, set_snipping_on_print_screen,
+    snipping_on_print_screen, system_shortcut, system_shortcuts,
+};
 mod shortcuts;
 pub use shortcuts::bind_keys;
 
@@ -489,8 +492,17 @@ pub fn desktop_dir() -> PathBuf {
 
 pub fn mark_screenshot(_path: &Path) {}
 
-/// Drags `path` into other apps as Explorer drags a file, until it's dropped.
-pub fn drag_file_out(path: PathBuf, cx: &mut gpui_kit::App) {
+thread_local! {
+    static DRAG_SOURCE: std::cell::Cell<Option<gpui_kit::WindowId>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether a drag out of `window` is under way, so dropping it back there can be ignored.
+pub fn dragging_out_of(window: gpui_kit::WindowId) -> bool {
+    DRAG_SOURCE.get() == Some(window)
+}
+
+/// Drags `path` out of `from` into other apps as Explorer drags a file, until it's dropped.
+pub fn drag_file_out(path: PathBuf, from: gpui_kit::WindowId, cx: &mut gpui_kit::App) {
     use windows::Win32::System::Com::IDataObject;
     use windows::Win32::System::Ole::{DROPEFFECT_COPY, IDropSource};
     use windows::Win32::UI::Shell::{BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop};
@@ -499,7 +511,9 @@ pub fn drag_file_out(path: PathBuf, cx: &mut gpui_kit::App) {
     cx.spawn(async move |_| unsafe {
         let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&wide, None) else { return };
         let Ok(data) = item.BindToHandler::<_, IDataObject>(None, &BHID_DataObject) else { return };
+        DRAG_SOURCE.set(Some(from));
         let _ = SHDoDragDrop(None, &data, None::<&IDropSource>, DROPEFFECT_COPY);
+        DRAG_SOURCE.set(None);
     })
     .detach();
 }
