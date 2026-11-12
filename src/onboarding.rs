@@ -14,7 +14,7 @@ const STEPS: usize = 3;
 const SCREEN_RECORDING: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
 /// Screen and Area hotkeys next to the system's screenshot keys.
-const BESIDE: (&str, &str) = if cfg!(windows) { ("ctrl+shift+1", "ctrl+shift+2") } else { ("shift+cmd+1", "shift+cmd+2") };
+const BESIDE: (&str, &str) = if !cfg!(target_os = "macos") { ("ctrl+shift+1", "ctrl+shift+2") } else { ("shift+cmd+1", "shift+cmd+2") };
 
 pub fn open(cx: &mut App) {
     let options = WindowOptions {
@@ -105,9 +105,10 @@ impl Onboarding {
                     .max_w(px(380.))
                     .text_center()
                     .text_color(theme.muted_foreground)
-                    .child(crate::platform_text(
+                    .child(crate::os_text(
                         "Kiri lives in the menu bar. Press a shortcut to capture, then mark it up, copy it, or pin it.",
                         "Kiri lives in the tray, by the clock. Press a shortcut to capture, then mark it up, copy it, or pin it.",
+                        "Kiri lives in the tray. Press a shortcut to capture, then mark it up, copy it, or save it.",
                     )),
             )
             // Windows asks no permission to capture.
@@ -177,14 +178,16 @@ impl Onboarding {
                     .child(option(
                         "beside",
                         false,
-                        crate::platform_text("Next to macOS", "Next to Snipping Tool"),
+                        crate::os_text("Next to macOS", "Next to Snipping Tool", "Next to the desktop's"),
                         keys(BESIDE),
-                        crate::platform_text(
+                        crate::os_text(
                             "The macOS screenshot shortcuts stay as they are.",
                             "Print Screen and Win+Shift+S keep opening Snipping Tool.",
+                            "Print Screen keeps opening the desktop's screenshot tool.",
                         ),
                     ))
-                    .child(option(
+                    // Linux desktops have no switch Kiri can turn for their screenshot keys.
+                    .when(!cfg!(target_os = "linux"), |d| d.child(option(
                         "instead",
                         true,
                         crate::platform_text("Instead of macOS", "Instead of Snipping Tool"),
@@ -193,7 +196,7 @@ impl Onboarding {
                             "Turns off ⇧⌘3 and ⇧⌘4 in macOS, so they open Kiri. ⇧⌘5 stays.",
                             "Turns off Snipping Tool on Print Screen, so it opens Kiri. Win+Shift+S stays.",
                         ),
-                    )),
+                    ))),
             )
             .into_any_element()
     }
@@ -292,9 +295,9 @@ impl Render for Onboarding {
 /// The titlebar is transparent, so this band stands in for it.
 fn titlebar(window: &Window, cx: &App) -> impl IntoElement {
     let bar = div().h(px(44.)).flex_none().on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move());
-    #[cfg(windows)]
+    #[cfg(not(target_os = "macos"))]
     let bar = bar.window_control_area(WindowControlArea::Drag).flex().justify_end().child(crate::mac::caption_buttons(window, cx));
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     let _ = (window, cx);
     bar
 }

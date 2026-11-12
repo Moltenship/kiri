@@ -46,8 +46,10 @@ fn conflict(keys: &str, taken: &crate::mac::SystemShortcut) -> String {
         Some(switch) => format!("{uses}. Turn off “{switch}” in Kiri's Hotkeys settings."),
         None => format!("{uses}, so Kiri may not get it."),
     };
+    #[cfg(target_os = "linux")]
+    return uses;
     // No section: it isn't in Apple's table.
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     match taken.section.as_str() {
         "" => format!("{uses}. Turn it off in Keyboard Shortcuts."),
         section => format!("{uses}. Turn it off in Keyboard Shortcuts › {section}."),
@@ -260,9 +262,15 @@ impl Row {
         self
     }
 
-    /// For settings that do nothing on Windows.
+    /// For settings that do nothing outside macOS.
     fn mac_only(mut self) -> Self {
-        self.hidden = cfg!(windows);
+        self.hidden = !cfg!(target_os = "macos");
+        self
+    }
+
+    /// For settings of what a Wayland session doesn't let Kiri do itself.
+    fn direct_only(mut self) -> Self {
+        self.hidden |= !crate::direct_screen();
         self
     }
 }
@@ -432,21 +440,25 @@ fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, sp
                         .mac_only(),
                     row("Freeze the screen while selecting", toggle("freeze", |s| s.freeze_screen, |s, v| s.freeze_screen = v, cx))
                         .description("Selects on a still of the moment you pressed the hotkey, so menus and hover states stay put.")
-                        .disabled(!now.kiri_selects()),
+                        .disabled(!now.kiri_selects())
+                        .direct_only(),
                 ],
             ),
             group(
                 "Screen",
                 [row("All displays in one image", toggle("all-displays", |s| s.fullscreen_all_displays, |s, v| s.fullscreen_all_displays = v, cx))
                     .description("Capture Screen takes every display as they are arranged, instead of the one under the pointer.")
-                    .disabled(cx.displays().len() < 2)],
+                    // X11 reports every monitor as one display.
+                    .disabled(cx.displays().len() < 2 && !cfg!(target_os = "linux"))
+                    .direct_only()],
             ),
             group(
                 "Windows",
                 [
-                    row("Window background", background_picker(cx)),
+                    row("Window background", background_picker(cx)).direct_only(),
                     row("Solid color", ColorPicker::new(solid).small().anchor(Anchor::TopRight))
-                        .disabled(now.window_background != WindowBackground::Solid),
+                        .disabled(now.window_background != WindowBackground::Solid)
+                        .direct_only(),
                 ],
             ),
             group(
@@ -459,7 +471,7 @@ fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, sp
             group(
                 "Scrolling capture",
                 [
-                    row("Max height", Input::new(max_height).small().w(px(110.)).suffix("px")),
+                    row("Max height", Input::new(max_height).small().w(px(110.)).suffix("px")).direct_only(),
                     row(
                         "Speed",
                         h_flex()
@@ -471,14 +483,17 @@ fn capture(solid: &Entity<ColorPickerState>, max_height: &Entity<InputState>, sp
                             .child("Fast"),
                     )
                     .description("Faster scrolls further between frames. Slow down for pages that load as you scroll.")
-                    .disabled(now.scroll_manual),
+                    .disabled(now.scroll_manual)
+                    .direct_only(),
                     row("Scroll by hand", toggle("manual", |s| s.scroll_manual, |s, v| s.scroll_manual = v, cx))
                         .description(crate::platform_text(
                             "Kiri stitches while you scroll, for apps that ignore automatic scrolling. Doesn't need Accessibility.",
                             "Kiri stitches while you scroll, for apps that ignore automatic scrolling.",
-                        )),
+                        ))
+                        .direct_only(),
                     row("Reverse scroll direction", toggle("reverse", |s| s.scroll_reverse, |s, v| s.scroll_reverse = v, cx))
-                        .description(crate::platform_text("For apps like Mos or Scroll Reverser that invert the wheel.", "For tools that invert the mouse wheel.")),
+                        .description(crate::platform_text("For apps like Mos or Scroll Reverser that invert the wheel.", "For tools that invert the mouse wheel."))
+                        .direct_only(),
                 ],
             ),
         ],
@@ -523,6 +538,7 @@ fn editor(cx: &App) -> Page {
 }
 
 fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
+    #[cfg(not(target_os = "linux"))]
     let system = h_flex()
         .gap_2()
         .children(KEYBOARD_SETTINGS.map(|url| button("keyboard", "Open Keyboard Shortcuts", move |cx| cx.open_url(url))))
@@ -533,6 +549,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
     let all = cx.try_global::<SystemShortcuts>().map(|s| s.0.clone()).unwrap_or_default();
     let keys = Capture::ALL
         .into_iter()
+        .filter(|capture| capture.available())
         .map(|capture| {
             let taken = settings::get(cx).hotkey(capture).and_then(|keys| Some((crate::mac::system_shortcut(&all, &keys)?, keys)));
             let recorder = recorder(capture, window, cx);
@@ -545,12 +562,17 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
         .collect::<Vec<_>>();
     Page {
         title: "Hotkeys",
-        icon: if cfg!(windows) { IconName::Keyboard } else { IconName::Command },
+        icon: if cfg!(target_os = "macos") { IconName::Command } else { IconName::Keyboard },
         groups: vec![
             Group {
-                description: Some("Click a shortcut, then press the new keys. Esc clears it, a click elsewhere keeps it."),
+                description: Some(if crate::direct_screen() {
+                    "Click a shortcut, then press the new keys. Esc clears it, a click elsewhere keeps it."
+                } else {
+                    "Click a shortcut, then press the new keys. The desktop may ask before it lets Kiri have them. Where it can't, add a shortcut in its keyboard settings that runs kiri --capture area."
+                }),
                 ..group(None, keys)
             },
+            #[cfg(not(target_os = "linux"))]
             group(
                 "System shortcuts",
                 std::iter::once(row(crate::platform_text("Screenshots in macOS", "Print Screen"), system).description(crate::platform_text(
@@ -566,7 +588,7 @@ fn hotkeys(window: &mut Window, cx: &mut App) -> Page {
 /// Where the system's screenshot shortcuts turn off. Windows moves its Print Screen switch between
 /// releases, so Kiri has its own instead.
 pub const KEYBOARD_SETTINGS: Option<&str> =
-    if cfg!(windows) { None } else { Some("x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts") };
+    if cfg!(target_os = "macos") { Some("x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts") } else { None };
 
 #[cfg(windows)]
 fn snipping_row() -> Option<Row> {
@@ -581,7 +603,7 @@ fn snipping_row() -> Option<Row> {
     Some(row(crate::mac::SNIPPING_SWITCH, switch).description("Windows' “Use the Print screen key to open screen capture”. Off, Kiri can take Print Screen."))
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 fn snipping_row() -> Option<Row> {
     None
 }
@@ -755,7 +777,7 @@ fn unshift(key: &str) -> Option<&'static str> {
 const HYPER: &str = "✦";
 
 pub fn pretty(keys: &str) -> String {
-    if cfg!(windows) {
+    if !cfg!(target_os = "macos") {
         return pretty_windows(keys);
     }
     const MODIFIERS: [(&str, &str); 4] = [("ctrl", "⌃"), ("alt", "⌥"), ("shift", "⇧"), ("cmd", "⌘")];
@@ -773,10 +795,10 @@ pub fn pretty(keys: &str) -> String {
     text
 }
 
-/// As Windows writes shortcuts: "Win+Ctrl+Shift+2", "PrtScn".
+/// As Windows writes shortcuts: "Win+Ctrl+Shift+2", "PrtScn". Linux desktops call Win Super.
 fn pretty_windows(keys: &str) -> String {
     const MODIFIERS: [(&[&str], &str); 4] =
-        [(&["super", "cmd", "meta"], "Win"), (&["ctrl", "control"], "Ctrl"), (&["alt", "option"], "Alt"), (&["shift"], "Shift")];
+        [(&["super", "cmd", "meta"], crate::os_text("Win", "Win", "Super")), (&["ctrl", "control"], "Ctrl"), (&["alt", "option"], "Alt"), (&["shift"], "Shift")];
     let parts: Vec<String> = keys.split('+').map(|p| p.to_ascii_lowercase()).collect();
     let modifier = |p: &str| MODIFIERS.iter().any(|(names, _)| names.contains(&p));
     let key = parts.iter().find(|p| !modifier(p)).map(|key| match key.as_str() {
@@ -806,7 +828,7 @@ fn advanced(cx: &App) -> Page {
     );
     let file = h_flex()
         .gap_2()
-        .child(button("reveal", crate::platform_text("Show in Finder", "Show in Explorer"), |cx| {
+        .child(button("reveal", crate::os_text("Show in Finder", "Show in Explorer", "Show in Files"), |cx| {
             let path = settings::path();
             if !path.exists() {
                 settings::update(cx, |_| {});
@@ -920,7 +942,7 @@ impl Render for SettingsWindow {
 
         let groups: Vec<(Option<SharedString>, Group)> = if query.is_empty() {
             let page = pages.into_iter().nth(self.page).unwrap();
-            page.groups.into_iter().map(|g| (g.title.map(SharedString::from), g)).collect()
+            page.groups.into_iter().filter(|g| !g.rows.is_empty()).map(|g| (g.title.map(SharedString::from), g)).collect()
         } else {
             pages
                 .into_iter()
@@ -969,7 +991,7 @@ impl Render for SettingsWindow {
             .h(px(44.))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move());
         // The caption buttons sit over the content, so the band covers what scrolls under them.
-        #[cfg(windows)]
+        #[cfg(not(target_os = "macos"))]
         let titlebar = titlebar.window_control_area(WindowControlArea::Drag).flex().child(div().w(px(SIDEBAR_W + 1.)).flex_none()).child(
             div().flex_1().h_full().flex().justify_end().bg(theme.background).child(crate::mac::caption_buttons(window, cx)),
         );
@@ -1229,13 +1251,13 @@ mod tests {
     #[test]
     fn windows_names_keys_as_windows_does() {
         assert_eq!(super::pretty_windows("shift+ctrl+2"), "Ctrl+Shift+2");
-        assert_eq!(super::pretty_windows("super+alt+o"), "Win+Alt+O");
+        assert_eq!(super::pretty_windows("super+alt+o"), format!("{}+Alt+O", crate::os_text("Win", "Win", "Super")));
         assert_eq!(super::pretty_windows("shift+printscreen"), "Shift+PrtScn");
         assert_eq!(super::pretty_windows("ctrl+f5"), "Ctrl+F5");
         assert_eq!(super::pretty_windows("ctrl+alt+shift+super+b"), "✦+B");
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     #[test]
     fn all_four_modifiers_are_the_hyper_key() {
         assert_eq!(super::pretty("ctrl+alt+shift+cmd+b"), "✦B");

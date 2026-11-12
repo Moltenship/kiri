@@ -7,7 +7,7 @@ use gpui_kit::component::{ActiveTheme, Sizable, h_flex};
 use gpui_kit::*;
 
 use crate::mac::{self, Shot};
-#[cfg(windows)]
+#[cfg(not(target_os = "macos"))]
 use crate::mac::scrolling as sys;
 use crate::stitch::{Step, Stitcher};
 use crate::tiled::TiledImage;

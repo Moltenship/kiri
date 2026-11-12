@@ -2,7 +2,7 @@
 //! out, and Update downloads it, swaps it in, and relaunches. On macOS only a build signed with
 //! Kiri's Developer ID may replace the app.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -15,6 +15,8 @@ const LATEST: &str = "https://api.github.com/repos/Moltenship/kiri/releases/late
 
 #[cfg(windows)]
 use crate::mac::update as sys;
+#[cfg(target_os = "linux")]
+use crate::linux::update as sys;
 pub use sys::bundle;
 
 #[derive(Default)]
@@ -157,7 +159,7 @@ fn latest() -> Result<Option<Release>, String> {
         browser_download_url: String,
         size: u64,
     }
-    let body = run(sys::curl().args(["-fsSL", "--max-time", "30", "-H", "Accept: application/vnd.github+json", LATEST]))?;
+    let body = run(&mut fetch(LATEST, None, 30, Some("application/vnd.github+json")))?;
     let release: Published = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
     let version = release.tag_name.trim_start_matches('v').to_string();
     if !newer(&version, env!("CARGO_PKG_VERSION")) {
@@ -173,10 +175,7 @@ fn download(release: &Release, steps: &UnboundedSender<Step>) -> Result<PathBuf,
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let archive = dir.join(sys::ASSET);
-    let mut curl = sys::curl()
-        .args(["-fsSL", "--max-time", "600", "-o"])
-        .arg(&archive)
-        .arg(&release.url)
+    let mut curl = fetch(&release.url, Some(&archive), 600, None)
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -196,6 +195,24 @@ fn download(release: &Release, steps: &UnboundedSender<Step>) -> Result<PathBuf,
     }
     let _ = steps.unbounded_send(Step::Check);
     sys::unpack(&dir, &archive)
+}
+
+/// `url` into `out`, or to stdout without one, giving up after `seconds`.
+fn fetch(url: &str, out: Option<&Path>, seconds: u32, accept: Option<&str>) -> Command {
+    #[cfg(target_os = "linux")]
+    if let Some(wget) = sys::wget(url, out, seconds, accept) {
+        return wget;
+    }
+    let mut curl = sys::curl();
+    curl.args(["-fsSL", "--max-time"]).arg(seconds.to_string());
+    if let Some(accept) = accept {
+        curl.arg("-H").arg(format!("Accept: {accept}"));
+    }
+    if let Some(out) = out {
+        curl.arg("-o").arg(out);
+    }
+    curl.arg(url);
+    curl
 }
 
 pub(crate) fn run(command: &mut Command) -> Result<Vec<u8>, String> {

@@ -195,14 +195,41 @@ mod sys {
 
 #[cfg(windows)]
 use crate::win::ocr as sys;
+#[cfg(target_os = "linux")]
+use crate::linux::ocr as sys;
 
 pub use sys::{languages, recognize, text_boxes};
+
+/// A QR code's text, for systems without a barcode reader. Dark on light, then light on dark.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn qr(bgra: &[u8], width: u32, height: u32) -> Option<String> {
+    if bgra.len() != (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let luma: Vec<u8> = bgra.chunks_exact(4).map(|p| ((p[2] as u32 * 77 + p[1] as u32 * 150 + p[0] as u32 * 29) >> 8) as u8).collect();
+    [false, true].into_iter().find_map(|invert| {
+        let w = width as usize;
+        let mut image = rqrr::PreparedImage::prepare_from_greyscale(w, height as usize, |x, y| match invert {
+            false => luma[y * w + x],
+            true => 255 - luma[y * w + x],
+        });
+        image.detect_grids().iter().filter_map(|grid| grid.decode().ok()).map(|(_, text)| text).find(|text| !text.is_empty())
+    })
+}
+
+/// Recognized text is often ready while Kiri has no window, where Linux needs Kiri's own clipboard.
+fn write_text(text: String, cx: &mut gpui_kit::App) {
+    #[cfg(target_os = "linux")]
+    let _ = (crate::linux::copy_text(&text), cx);
+    #[cfg(not(target_os = "linux"))]
+    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+}
 
 /// Copies OCR text with or without line breaks; the toast offers the other one.
 fn copy_text(text: String, join: bool, cx: &mut gpui_kit::App) {
     let copied = if join { text.replace('\n', " ") } else { text.clone() };
     let preview = copied.split_whitespace().collect::<Vec<_>>().join(" ");
-    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(copied));
+    write_text(copied, cx);
     let label = if join { "Add breaks" } else { "Cut breaks" };
     crate::toast::done(
         format!("Text copied: {preview}"),
@@ -222,7 +249,7 @@ pub fn recognize_and_copy(bgra: Vec<u8>, w: u32, h: u32, cx: &mut gpui_kit::App)
             .await;
         cx.update(|cx| match result {
             Ok(Recognized::Barcode(code)) => {
-                cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(code.clone()));
+                write_text(code.clone(), cx);
                 let toast = format!("Code copied: {code}");
                 let url = code.starts_with("http://") || code.starts_with("https://");
                 let open: Option<crate::toast::Action> =
@@ -240,6 +267,10 @@ pub fn recognize_and_copy(bgra: Vec<u8>, w: u32, h: u32, cx: &mut gpui_kit::App)
 /// Vision builds its model cache on first use, which takes many seconds once per
 /// binary. A tiny throwaway request at launch moves that wait off the first real OCR.
 pub fn warm_up(cx: &gpui_kit::App) {
+    // Tesseract keeps no cache between runs.
+    if cfg!(target_os = "linux") {
+        return;
+    }
     cx.background_executor()
         .spawn(async {
             let blank = vec![255u8; 64 * 32 * 4];
@@ -248,3 +279,46 @@ pub fn warm_up(cx: &gpui_kit::App) {
         .detach();
 }
 
+#[cfg(test)]
+#[cfg(not(target_os = "macos"))]
+mod tests {
+    /// "kiri", as segno draws it.
+    const KIRI: [&str; 21] = [
+        "#######.......#######",
+        "#.....#.#.###.#.....#",
+        "#.###.#....##.#.###.#",
+        "#.###.#...#.#.#.###.#",
+        "#.###.#.##..#.#.###.#",
+        "#.....#...#.#.#.....#",
+        "#######.#.#.#.#######",
+        ".........#.##........",
+        "#.#.#.#..#.#....#..#.",
+        "##.###.#.#....#..####",
+        ".#######..#.#...#####",
+        "#.#.#..#.#....#.....#",
+        "###.#.####..#.#.##...",
+        "........#.##.#.#.#.##",
+        "#######..###.###...##",
+        "#.....#..#####.##..#.",
+        "#.###.#.#.##.###...##",
+        "#.###.#.......##.###.",
+        "#.###.#.###.#...###.#",
+        "#.....#..#....##.#.#.",
+        "#######.#...#.#.#.###",
+    ];
+
+    #[test]
+    fn reads_qr_codes_dark_on_light_and_light_on_dark() {
+        let (scale, border, n) = (4, 4, (21 + 8) * 4);
+        for (dark, light) in [([0, 0, 0, 255], [255; 4]), ([255; 4], [40, 30, 30, 255])] {
+            let bgra: Vec<u8> = (0..n * n)
+                .flat_map(|i| {
+                    let (x, y) = ((i % n) / scale, (i / n) / scale);
+                    let inside = (border..border + 21).contains(&x) && (border..border + 21).contains(&y);
+                    if inside && KIRI[y - border].as_bytes()[x - border] == b'#' { dark } else { light }
+                })
+                .collect();
+            assert_eq!(super::qr(&bgra, n as u32, n as u32).as_deref(), Some("kiri"));
+        }
+    }
+}

@@ -21,7 +21,12 @@ fn socket() -> PathBuf {
     if cfg!(windows) {
         return PathBuf::from(format!(r"\\.\pipe\kiri-{:x}", h.finish()));
     }
-    std::env::temp_dir().join(format!("kiri-{:x}.sock", h.finish()))
+    // Linux has a runtime dir only its user can enter.
+    #[cfg(target_os = "linux")]
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|d| d.is_absolute()).unwrap_or_else(std::env::temp_dir);
+    #[cfg(not(target_os = "linux"))]
+    let dir = std::env::temp_dir();
+    dir.join(format!("kiri-{:x}.sock", h.finish()))
 }
 
 /// What `--then` asks for after one automated capture, in place of the after-capture settings.

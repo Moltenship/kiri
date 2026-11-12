@@ -445,7 +445,7 @@ pub fn print_png(png: &[u8], window: &Window) {
 }
 
 /// The clipboard's PNG as premultiplied BGRA plus its pixels per logical unit.
-pub fn clipboard_image() -> Option<(u32, u32, Vec<u8>, f32)> {
+pub fn clipboard_image(_cx: &gpui_kit::App) -> Option<(u32, u32, Vec<u8>, f32)> {
     let bytes = unsafe {
         OpenClipboard(None).ok()?;
         let bytes = GetClipboardData(png_format()).ok().and_then(|data| {

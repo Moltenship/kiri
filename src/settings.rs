@@ -57,6 +57,13 @@ impl Capture {
         Capture::ALL.into_iter().find(|c| c.cli_name() == name)
     }
 
+    /// Whether this session can run it. Wayland lets Kiri neither select on the screen nor
+    /// list windows, so only what the desktop's screenshot portal can stand in for remains.
+    pub fn available(self) -> bool {
+        crate::direct_screen()
+            || matches!(self, Capture::Area | Capture::Fullscreen | Capture::Window | Capture::Delayed | Capture::DelayedArea | Capture::Text | Capture::Reopen | Capture::Settings)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Capture::Area => "Capture Area",
@@ -76,8 +83,9 @@ impl Capture {
 
     fn default_hotkey(self) -> Option<&'static str> {
         // The Windows key with Shift and a digit belongs to the taskbar, Print Screen and
-        // Windows+Shift+S to Snipping Tool, and Ctrl+Alt is AltGr on many keyboards.
-        if cfg!(windows) {
+        // Windows+Shift+S to Snipping Tool, and Ctrl+Alt is AltGr on many keyboards. Linux
+        // desktops give Print Screen and Super to their own tools too.
+        if !cfg!(target_os = "macos") {
             return match self {
                 Capture::Area => Some("ctrl+shift+2"),
                 Capture::Fullscreen => Some("ctrl+shift+1"),
@@ -338,7 +346,7 @@ impl Settings {
 
     /// Whether Kiri's overlay selects areas. Windows has no system selection to hand off to.
     pub fn kiri_selects(&self) -> bool {
-        cfg!(windows) || self.area_selection == AreaSelection::Kiri
+        !cfg!(target_os = "macos") || self.area_selection == AreaSelection::Kiri
     }
 
     pub fn hotkey(&self, action: Capture) -> Option<String> {
@@ -361,15 +369,18 @@ pub fn dev() -> bool {
 }
 
 pub fn path() -> PathBuf {
-    let dir = if dev() { "Kiri Dev" } else { "Kiri" };
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default();
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     let base = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Application Support");
+    #[cfg(not(target_os = "linux"))]
+    let dir = if dev() { "Kiri Dev" } else { "Kiri" };
+    #[cfg(target_os = "linux")]
+    let (base, dir) = (crate::linux::xdg("XDG_CONFIG_HOME", ".config"), if dev() { "kiri-dev" } else { "kiri" });
     base.join(dir).join("settings.json")
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 fn launch_agent_label() -> &'static str {
     if dev() { "sh.kiri.Kiri.dev" } else { "sh.kiri.Kiri" }
 }
@@ -442,7 +453,7 @@ pub fn export(file: &std::path::Path, cx: &App) -> Result<(), String> {
 }
 
 /// A per-user LaunchAgent: unlike `SMAppService`, it works for an unbundled binary.
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 fn launch_agent() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -450,15 +461,15 @@ fn launch_agent() -> PathBuf {
         .join(format!("Library/LaunchAgents/{}.plist", launch_agent_label()))
 }
 
-#[cfg(windows)]
+#[cfg(not(target_os = "macos"))]
 pub use crate::mac::{launch_at_login, set_launch_at_login};
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn launch_at_login() -> bool {
     launch_agent().exists()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn set_launch_at_login(on: bool) -> Result<(), String> {
     let path = launch_agent();
     if !on {

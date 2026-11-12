@@ -79,6 +79,11 @@ pub fn hide(cx: &mut App) {
 }
 
 fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) -> Option<Entity<Toast>> {
+    #[cfg(target_os = "linux")]
+    if !crate::direct_screen() {
+        notify(text, action, style, cx);
+        return None;
+    }
     let big = style == Style::Countdown;
     hide(cx);
     let Some(display) = cx
@@ -133,6 +138,42 @@ fn open(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) 
     })
     .detach();
     Some(toast)
+}
+
+/// Wayland places no window where Kiri asks, so the desktop's notifications carry toasts there.
+/// Those can't be updated or taken back, so the countdown stays quiet and progress shows once.
+#[cfg(target_os = "linux")]
+fn notify(text: SharedString, action: Option<Action>, style: Style, cx: &mut App) {
+    /// The newest notification's button; an older one's does nothing.
+    #[derive(Default)]
+    struct Posted {
+        count: u64,
+        progress: bool,
+        action: Option<(SharedString, Rc<dyn Fn(&mut App)>)>,
+    }
+    impl Global for Posted {}
+    if style == Style::Countdown || (style == Style::Progress && cx.default_global::<Posted>().progress) {
+        return;
+    }
+    if cx.default_global::<Posted>().count == 0 {
+        cx.on_system_notification_response(|response, cx| {
+            let posted = cx.default_global::<Posted>();
+            let run = match (&response.action_id, &posted.action) {
+                (Some(_), Some((tag, _))) if *tag == response.tag => posted.action.take().map(|(_, run)| run),
+                _ => None,
+            };
+            if let Some(run) = run {
+                run(cx);
+            }
+        });
+    }
+    let posted = cx.default_global::<Posted>();
+    posted.count += 1;
+    posted.progress = style == Style::Progress;
+    let tag = SharedString::from(format!("kiri-{}", posted.count));
+    let actions = action.as_ref().map(|(label, _)| SystemNotificationAction { id: "run".into(), label: (*label).into() });
+    posted.action = action.map(|(_, run)| (tag.clone(), run));
+    cx.show_system_notification(SystemNotification { tag, title: "Kiri".into(), body: text, actions: actions.into_iter().collect() });
 }
 
 struct Toast {

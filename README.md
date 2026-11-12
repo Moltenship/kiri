@@ -5,13 +5,14 @@
 <h1 align="center">Kiri</h1>
 
 <p align="center">
-  An open-source screenshot tool for macOS and Windows, written in Rust and drawn on the GPU.
+  An open-source screenshot tool for macOS, Windows, and Linux, written in Rust and drawn on the GPU.
 </p>
 
 <p align="center">
   <a href="https://github.com/Moltenship/kiri/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Moltenship/kiri?label=release&color=7b68a6"></a>
   <img alt="macOS 15.2+ on Apple Silicon" src="https://img.shields.io/badge/macOS-15.2%2B%20on%20Apple%20Silicon-555">
   <img alt="Windows 10 and 11, x64" src="https://img.shields.io/badge/Windows-10%20and%2011%2C%20x64-555">
+  <img alt="Linux, Ubuntu 22.04+, x64" src="https://img.shields.io/badge/Linux-Ubuntu%2022.04%2B%2C%20x64-555">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Moltenship/kiri?color=555"></a>
 </p>
 
@@ -32,7 +33,7 @@
   </picture>
 </p>
 
-Kiri captures an area, a window, a screen, or a page that scrolls, and opens it in an editor for arrows, text, blur, and measurements. Press ⇧⌘2 (Ctrl+Shift+2 on Windows), drag, then press Esc, and the image is on the clipboard.
+Kiri captures an area, a window, a screen, or a page that scrolls, and opens it in an editor for arrows, text, blur, and measurements. Press ⇧⌘2 (Ctrl+Shift+2 on Windows and Linux), drag, then press Esc, and the image is on the clipboard.
 
 > [!NOTE]
 > Please [open an issue](https://github.com/Moltenship/kiri/issues) when something breaks.
@@ -60,17 +61,26 @@ Kiri needs macOS 15.2 or later on Apple Silicon.
 
 Kiri then lives in the tray. It needs Windows 10 or 11 on x64. For a portable copy, unzip `Kiri-windows-x64.zip` into any folder you can write to and run `Kiri.exe`.
 
+### Linux
+
+Linux support is new and hasn't been tried on every desktop yet.
+
+1. Download `Kiri-linux-x64.tar.gz` from the [releases page](https://github.com/Moltenship/kiri/releases).
+2. Extract it into a folder you own, such as your home folder, and run `Kiri/kiri`.
+
+Kiri then lives in the tray, and in your app menu. It needs x64 and Ubuntu 22.04 or a distribution as recent. On Wayland, the default on Ubuntu, captures go through the desktop's own screenshot picker, and some features aren't available: the [user guide](docs/user/README.md#on-linux) has the details, and how to set up hotkeys on desktops that don't let apps bind them. Text recognition needs `tesseract-ocr`.
+
 When a new release is out, a red dot appears on Kiri's menu bar or tray icon, and its menu installs the update.
 
 ## Shortcuts
 
-| Action | macOS | Windows |
+| Action | macOS | Windows and Linux |
 | --- | --- | --- |
 | Capture Area | ⇧⌘2 | Ctrl+Shift+2 |
 | Capture Screen | ⇧⌘1 | Ctrl+Shift+1 |
 | Recognize Text or QR | ⌃⌥⌘O | Ctrl+Shift+3 |
 
-On macOS, the welcome window and Settings → Hotkeys can move Capture Screen and Capture Area to ⇧⌘3 and ⇧⌘4, and Kiri turns those two off in macOS. On Windows, they can take PrtScn from Snipping Tool instead. Settings → Hotkeys gives every other action a shortcut too.
+On macOS, the welcome window and Settings → Hotkeys can move Capture Screen and Capture Area to ⇧⌘3 and ⇧⌘4, and Kiri turns those two off in macOS. On Windows, they can take PrtScn from Snipping Tool instead. On Linux, Print Screen stays with the desktop. Settings → Hotkeys gives every other action a shortcut too.
 
 ## What it does
 
@@ -89,14 +99,14 @@ Kiri has no account, no cloud, and no telemetry. Its only network request is the
 
 ## Build from source
 
-You need a recent stable Rust, plus Xcode on macOS or the Visual Studio C++ build tools on Windows.
+You need a recent stable Rust, plus Xcode on macOS, the Visual Studio C++ build tools on Windows, or on Linux a C toolchain and the headers `scripts/release-linux.sh` installs.
 
 ```sh
 cargo build --release
 ./target/release/kiri
 ```
 
-A bare binary is enough for development. It runs as Kiri Dev, with its own settings and menu bar or tray icon, beside an installed Kiri. `scripts/release.sh` builds the signed and notarized Mac app and `scripts/release-windows.ps1` the Windows zip, as [docs/operations/release.md](docs/operations/release.md) describes.
+A bare binary is enough for development. It runs as Kiri Dev, with its own settings and menu bar or tray icon, beside an installed Kiri. `scripts/release.sh` builds the signed and notarized Mac app, `scripts/release-windows.ps1` the Windows zip, and `scripts/release-linux.sh` the Linux tarball, as [docs/operations/release.md](docs/operations/release.md) describes.
 
 ## Contributing
 

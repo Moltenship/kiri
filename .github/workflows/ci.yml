@@ -1,0 +1,18 @@
+# Linux builds nowhere else before a release, so pull requests build, test and package it here.
+name: CI
+
+on:
+  pull_request:
+
+env:
+  RUSTUP_TOOLCHAIN: 1.99.0
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    steps:
+      - uses: actions/checkout@v7
+      # Without git in the image, checkout downloads an archive, so the script runs through sh.
+      - run: sh scripts/release-linux.sh --setup
+      - run: '"$HOME/.cargo/bin/cargo" test --locked'

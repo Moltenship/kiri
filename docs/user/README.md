@@ -1,6 +1,6 @@
 # Using Kiri
 
-Kiri lives in the menu bar, or the tray on Windows. Every capture is in its menu, and Settings → Hotkeys gives any of them a shortcut.
+Kiri lives in the menu bar, or the tray on Windows and Linux. Every capture is in its menu, and Settings → Hotkeys gives any of them a shortcut.
 
 The first launch walks through Screen Recording access, the capture shortcuts, and the look. Settings → General changes the appearance later: System, Light, or Dark.
 
@@ -65,6 +65,21 @@ Everything in this guide works the same way, with Ctrl where macOS uses `⌘` an
 - Recognize Text reads the languages installed in Windows, or the one picked in Settings. Of the barcodes, only QR codes are read.
 - The editor has no menu bar: its Menu button holds the same commands, and F11 toggles full screen.
 - Windows asks for no permissions, but Kiri can't scroll windows of apps that run as administrator.
+
+## On Linux
+
+Linux support is new, and nobody has tried every desktop yet. Please [open an issue](https://github.com/Moltenship/kiri/issues) when something doesn't work. Kiri is built for Ubuntu 22.04 and later on x64.
+
+Download `Kiri-linux-x64.tar.gz` from the releases page, extract it into a folder you own, such as your home folder, and run `Kiri/kiri`. From then on Kiri is in your app menu, where right-clicking it offers Capture Area, Capture Screen, and Settings. Keep the binary where it is: updates replace it in place, and the menu entry follows it if you move it.
+
+Shortcuts and keys work as on Windows: Ctrl where macOS uses `⌘`, and the capture shortcuts are Ctrl+Shift+2, Ctrl+Shift+1, and Ctrl+Shift+3. Print Screen stays with the desktop's own screenshot tool. The editor's Menu button holds its commands, and F11 toggles full screen. There is no Print, and images can't be dragged out of Kiri's windows yet.
+
+- **The tray.** Kiri's icon needs a tray that speaks StatusNotifierItem. Ubuntu's desktop has one; on plain GNOME, install the AppIndicator extension. Without a tray, open Kiri from the app menu again to get to Settings.
+- **Text recognition** uses Tesseract. Install it with `sudo apt install tesseract-ocr`, and a language's data with `tesseract-ocr-deu` and the like. Settings → Advanced lists the installed languages.
+- **On X11** everything in this guide works, except right-clicking a pin, which has no menu yet. Capture Screen takes the monitor under the pointer.
+- **On Wayland**, the default on Ubuntu, apps can't read the screen or float windows over it, so Kiri asks the desktop. Capture Area, Recognize Text, and Capture Window open the desktop's screenshot picker; take the shot there and Kiri opens it. Capture Screen takes the whole desktop, every monitor. The desktop may ask once whether Kiri may take screenshots. Messages show as notifications, and captures open in the editor instead of a thumbnail. Scrolling capture, Active Window, Repeat Area, Freeze the screen, and pins aren't available.
+- **Hotkeys on Wayland.** Kiri asks the desktop to bind its shortcuts, and the desktop may ask you to confirm or pick other keys. Many desktops, including GNOME on Ubuntu 22.04 and 24.04, can't do this yet. There, add a custom shortcut in the desktop's keyboard settings (on Ubuntu, Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts) with the command `kiri --capture area`, using the full path to the binary, and allow Automation when Kiri asks the first time. The other actions are listed under [Automation](#automation).
+- **Minimal installs** that run Kiri without a desktop's usual libraries need `libxcb1`, `libxkbcommon-x11-0`, and a graphics driver with Vulkan or OpenGL ES, such as Mesa's `mesa-vulkan-drivers`.
 
 ## Updates
 

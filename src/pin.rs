@@ -8,6 +8,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::{Icon, Sizable, h_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+#[cfg(not(target_os = "linux"))]
 use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 
 use crate::editor::DragFileOut;
@@ -39,6 +40,9 @@ const MAX_ZOOM: f32 = 8.;
 
 /// `doc` is the editor content the pin came from, so Edit gets the objects back.
 pub fn open(image: TiledImage, scale: f32, origin: Point<Pixels>, doc: Option<crate::editor::Document>, cx: &mut App) {
+    if !crate::direct_screen() {
+        return crate::toast::show("Pins aren't available on Wayland", cx);
+    }
     let id = {
         let pins = cx.default_global::<Pins>();
         pins.next += 1;
@@ -201,6 +205,8 @@ impl Pin {
         self.close(window, cx);
     }
 
+    /// Linux has no native menu without GTK, and one drawn inside the pin would be cut off by it.
+    #[cfg(not(target_os = "linux"))]
     fn show_menu(&self, position: Point<Pixels>, window: &mut Window) {
         let id = |action: &str| format!("pin:{}:{action}", self.id);
         let menu = Menu::new();
@@ -244,7 +250,7 @@ impl Render for Pin {
                 .hover(|s| s.bg(white().opacity(0.18)))
                 .child(Icon::new(icon).xsmall().text_color(white()))
         };
-        div()
+        let pin = div()
             .id("pin")
             .size_full()
             .key_context("Pin")
@@ -252,12 +258,10 @@ impl Render for Pin {
             .on_action(cx.listener(|this, _: &CopyAndClose, w, cx| this.copy_and_close(w, cx)))
             .on_action(cx.listener(|this, _: &ClosePin, w, cx| this.close(w, cx)))
             .on_action(cx.listener(|this, _: &EditPin, w, cx| this.edit(w, cx)))
-            .on_mouse_down(MouseButton::Left, |_, window, _| mac::start_window_move(window))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(|this, e: &MouseDownEvent, window, _| this.show_menu(e.position, window)),
-            )
-            .on_scroll(cx.listener(|this, e: &ScrollEvent, window, cx| {
+            .on_mouse_down(MouseButton::Left, |_, window, _| mac::start_window_move(window));
+        #[cfg(not(target_os = "linux"))]
+        let pin = pin.on_mouse_down(MouseButton::Right, cx.listener(|this, e: &MouseDownEvent, window, _| this.show_menu(e.position, window)));
+        pin.on_scroll(cx.listener(|this, e: &ScrollEvent, window, cx| {
                 let dy = e.delta.pixel_delta(px(16.)).y.as_f32();
                 this.set_zoom(this.zoom * (1. + dy * 0.004), window, cx);
             }))
@@ -291,12 +295,12 @@ impl Render for Pin {
                         .bg(black().opacity(0.62))
                         .when(cfg!(windows), |d| d.occlude())
                         .child(tool("close", IconName::X).on_click(cx.listener(|this, _, w, cx| this.close(w, cx))))
-                        .child(
+                        .when(crate::editor::DRAGS_OUT, |d| d.child(
                             tool("drag", IconName::GripVertical)
                                 .cursor_grab()
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                                 .drag_file_out(cx.weak_entity(), |pin: &Pin, _| pin.png()),
-                        )
+                        ))
                         .child(tool("edit", IconName::Pencil).on_click(cx.listener(|this, _, w, cx| this.edit(w, cx))))
                         .child(
                             tool("copy", IconName::Copy)

@@ -164,7 +164,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new(crate::platform_text("alt-cmd-w", "ctrl-shift-w"), CloseAll, None),
     ]);
     // Windows quits from the tray; Alt+F4 closes the window.
-    if !cfg!(windows) {
+    if cfg!(target_os = "macos") {
         crate::bind_keys(cx, [KeyBinding::new("cmd-q", Quit, None)]);
     }
     let base = Some("Editor");
@@ -177,7 +177,6 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new(crate::keys("cmd-s"), Save, base),
         KeyBinding::new(crate::keys("shift-cmd-s"), SaveAs, base),
         KeyBinding::new(crate::keys("cmd-p"), Pin, base),
-        KeyBinding::new(crate::keys("shift-cmd-p"), Print, base),
         KeyBinding::new(crate::keys("cmd-w"), Close, base),
         KeyBinding::new(crate::keys("cmd-z"), Undo, base),
         KeyBinding::new(crate::keys("shift-cmd-z"), Redo, base),
@@ -210,7 +209,10 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("p", ToggleUnit, idle),
         KeyBinding::new("k", ToggleBackdrop, tools),
     ];
-    if cfg!(windows) {
+    if !cfg!(target_os = "linux") {
+        keys.push(KeyBinding::new(crate::keys("shift-cmd-p"), Print, base));
+    }
+    if !cfg!(target_os = "macos") {
         keys.push(KeyBinding::new("ctrl-y", Redo, base));
         keys.push(KeyBinding::new("f11", EnterFullScreen, base));
     }
@@ -221,8 +223,8 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 const TOOLBAR_H: f32 = 52.;
-/// What Windows' caption buttons and room to drag add to the toolbar, net of the room macOS keeps for its own.
-const CAPTION_W: f32 = if cfg!(windows) { 168. } else { 0. };
+/// What Windows' and Linux's caption buttons and room to drag add to the toolbar, net of the room macOS keeps for its own.
+const CAPTION_W: f32 = if !cfg!(target_os = "macos") { 168. } else { 0. };
 const FIT_MARGIN: f32 = 28.;
 /// Canvas padding once objects grow it, in points.
 const GROW_PAD: f32 = 20.;
@@ -250,19 +252,21 @@ fn app_menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Quit Kiri", Quit),
         ]),
-        Menu::new("File").items([
-            MenuItem::action("Copy Image", CopyImage),
-            MenuItem::action("Save Image", Save),
-            MenuItem::action("Save Image As…", SaveAs),
-            MenuItem::action("Pin to Screen", Pin),
-            MenuItem::action("Print…", Print),
-            MenuItem::separator(),
-            MenuItem::action("Open File…", OpenFile),
-            MenuItem::action("Open From Clipboard", OpenClipboard),
-            MenuItem::separator(),
-            MenuItem::action("Close", Close),
-            MenuItem::action("Close All", CloseAll),
-        ]),
+        Menu::new("File").items(
+            [MenuItem::action("Copy Image", CopyImage), MenuItem::action("Save Image", Save), MenuItem::action("Save Image As…", SaveAs)]
+                .into_iter()
+                .chain(crate::direct_screen().then(|| MenuItem::action("Pin to Screen", Pin)))
+                // Linux has no print dialog for GPUI to show.
+                .chain((!cfg!(target_os = "linux")).then(|| MenuItem::action("Print…", Print)))
+                .chain([
+                    MenuItem::separator(),
+                    MenuItem::action("Open File…", OpenFile),
+                    MenuItem::action("Open From Clipboard", OpenClipboard),
+                    MenuItem::separator(),
+                    MenuItem::action("Close", Close),
+                    MenuItem::action("Close All", CloseAll),
+                ]),
+        ),
         Menu::new("Edit").items([
             MenuItem::action("Undo", Undo),
             MenuItem::action("Redo", Redo),
@@ -1201,6 +1205,14 @@ impl Editor {
         .detach();
     }
 
+    fn print(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.finish_text();
+        #[cfg(not(target_os = "linux"))]
+        mac::print_png(&self.png(cx), window);
+        #[cfg(target_os = "linux")]
+        let _ = (window, cx);
+    }
+
     fn pin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finish_text();
         let pixmap = self.render_pixmap(self.selection, &self.objects);
@@ -1401,8 +1413,8 @@ impl Editor {
         let k = &e.keystroke;
         let m = k.modifiers;
         // Windows takes Ctrl for clipboard keys and word moves, and Home and End for lines.
-        let cmd = m.platform || cfg!(windows) && m.control;
-        let (word, line) = if cfg!(windows) { (m.control, false) } else { (m.alt, m.platform) };
+        let cmd = m.platform || !cfg!(target_os = "macos") && m.control;
+        let (word, line) = if !cfg!(target_os = "macos") { (m.control, false) } else { (m.alt, m.platform) };
         let (sel, c, t) = (edit.selection(), edit.caret, text.as_str());
         let width = |s: &str| mac::text_width(s, size, bold);
         match k.key.as_str() {
@@ -1443,7 +1455,7 @@ impl Editor {
                 let to = if line { if down { t.len() } else { 0 } } else { te::vertical(t, c, down, width) };
                 edit.go(to, m.shift);
             }
-            "home" | "end" if cfg!(windows) && !m.control => {
+            "home" | "end" if !cfg!(target_os = "macos") && !m.control => {
                 edit.go(if k.key == "home" { te::line_start(t, c) } else { te::line_end(t, c) }, m.shift)
             }
             "home" => edit.go(0, m.shift),
@@ -2031,7 +2043,7 @@ impl Editor {
     }
 
     fn paste_image(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match mac::clipboard_image() {
+        match mac::clipboard_image(cx) {
             Some((w, h, bgra, ppp)) => self.insert_image(w, h, bgra, ppp, None, window, cx),
             None => self.show_toast("The clipboard has no image", None, cx),
         }
@@ -2387,16 +2399,22 @@ pub fn write_temp(png: &[u8], name: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+#[cfg(not(target_os = "linux"))]
 struct DragGhost;
 
+#[cfg(not(target_os = "linux"))]
 impl Render for DragGhost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         Empty
     }
 }
 
+/// GPUI on Linux hands no drag to the desktop, so nothing there offers one.
+pub const DRAGS_OUT: bool = !cfg!(target_os = "linux");
+
 pub trait DragFileOut: StatefulInteractiveElement + Sized {
     /// Makes the element a drag handle that offers `view`'s PNG as a file to other apps.
+    #[cfg(not(target_os = "linux"))]
     fn drag_file_out<V: 'static>(self, view: WeakEntity<V>, png: impl Fn(&V, &App) -> Vec<u8> + 'static) -> Self {
         let path = move |view: &WeakEntity<V>, cx: &App| write_temp(&png(view.upgrade()?.read(cx), cx), &settings::get(cx).file_name);
         let this = self.on_drag(view, |_, _, _, cx| cx.new(|_| DragGhost));
@@ -2410,8 +2428,13 @@ pub trait DragFileOut: StatefulInteractiveElement + Sized {
                 mac::drag_file_out(file, window.window_handle().window_id(), cx);
             }
         });
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         this.external_drag_payload(move |view: &WeakEntity<V>, _, cx| Some(ExternalDragPayload::Files(FileDragPaths::new([(path(view, cx)?, false)]))))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn drag_file_out<V: 'static>(self, _view: WeakEntity<V>, _png: impl Fn(&V, &App) -> Vec<u8> + 'static) -> Self {
+        self
     }
 }
 
@@ -2430,7 +2453,7 @@ fn color_diff(a: u32, b: u32) -> i32 {
 
 /// ⌘ in a drag. On Windows that's Ctrl: Win opens the Start menu when it's let go.
 fn cmd_held(m: Modifiers) -> bool {
-    if cfg!(windows) { m.control } else { m.platform }
+    if !cfg!(target_os = "macos") { m.control } else { m.platform }
 }
 
 /// `cmd` points a new arrow back at where the drag started, as the alternative does.
@@ -2444,7 +2467,7 @@ fn shape_drag(shape: &mut Shape, start: P, p: P, shift: bool, alt: bool, cmd: bo
         Shape::Arrow { from, to, .. } => {
             let end = if shift { doc::snap45(start, p) } else { p };
             // Alt reverses on Windows, where Ctrl stands in for ⌘ and draws from the center instead.
-            let (center, reverse) = if cfg!(windows) { (cmd, alt) } else { (alt, cmd) };
+            let (center, reverse) = if !cfg!(target_os = "macos") { (cmd, alt) } else { (alt, cmd) };
             let begin = if center { (2. * start.0 - end.0, 2. * start.1 - end.1) } else { start };
             (*from, *to) = if reverse { (end, begin) } else { (begin, end) };
         }
@@ -2573,10 +2596,7 @@ impl Render for Editor {
                 this.finish_text();
                 crate::add_capture(w.window_handle(), cx);
             }))
-            .on_action(cx.listener(|this, _: &Print, w, cx| {
-                this.finish_text();
-                mac::print_png(&this.png(cx), w);
-            }))
+            .on_action(cx.listener(|this, _: &Print, w, cx| this.print(w, cx)))
             .on_action(cx.listener(|_, _: &Close, w, _| w.remove_window()))
             .on_action(cx.listener(|this, _: &Undo, _, cx| this.undo(cx)))
             .on_action(cx.listener(|this, _: &Redo, _, cx| this.redo(cx)))
@@ -2609,7 +2629,7 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &ImprintSize, _, cx| this.imprint_size(cx)))
             .on_action(cx.listener(|this, _: &ResetCrop, _, cx| this.reset_crop(cx)))
             // AppKit runs the menu item on macOS.
-            .when(cfg!(windows), |d| d.on_action(|_: &EnterFullScreen, window, _| window.toggle_fullscreen()))
+            .when(!cfg!(target_os = "macos"), |d| d.on_action(|_: &EnterFullScreen, window, _| window.toggle_fullscreen()))
             .on_action(cx.listener(|this, _: &Rasterize, _, cx| this.rasterize(cx)))
             .on_action(cx.listener(|this, _: &CopyColor, _, cx| this.copy_color(false, cx)))
             .on_action(cx.listener(|this, _: &CopyTextColor, _, cx| this.copy_color(true, cx)))
@@ -2775,11 +2795,11 @@ impl Editor {
             .bg(theme.title_bar)
             .border_b_1()
             .border_color(theme.title_bar_border)
-            .when(cfg!(windows), |bar| bar.child(self.menu_button()))
+            .when(!cfg!(target_os = "macos"), |bar| bar.child(self.menu_button()))
             .child(icon_button("copy", IconName::Copy, "Copy and close", Box::new(CopyAndClose)))
             .child(icon_button("save", IconName::Download, "Save", Box::new(Save)))
-            .child(icon_button("pin", IconName::Pin, "Pin to screen", Box::new(Pin)))
-            .child(
+            .when(crate::direct_screen(), |bar| bar.child(icon_button("pin", IconName::Pin, "Pin to screen", Box::new(Pin))))
+            .when(DRAGS_OUT, |bar| bar.child(
                 div()
                     .id("drag-out")
                     .size(px(28.))
@@ -2792,7 +2812,7 @@ impl Editor {
                     .child(Icon::new(IconName::GripVertical).small().text_color(theme.muted_foreground))
                     .tooltip(|window, cx| Tooltip::new("Drag the image into another app").build(window, cx))
                     .drag_file_out(cx.weak_entity(), Self::png),
-            )
+            ))
             .child(divider())
             .child(tools)
             .child(divider())
@@ -2840,7 +2860,7 @@ impl Editor {
                         d.child(canvas(fit, |_, _, _, _| {}).absolute().size_full())
                     })
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
-                    .when(cfg!(windows), |d| d.window_control_area(WindowControlArea::Drag)),
+                    .when(!cfg!(target_os = "macos"), |d| d.window_control_area(WindowControlArea::Drag)),
             )
             .child(
                 h_flex()
@@ -2932,14 +2952,14 @@ impl Editor {
                             .on_click(cx.listener(|this, _, _, cx| this.fit_all(cx))),
                     ),
             );
-        #[cfg(windows)]
+        #[cfg(not(target_os = "macos"))]
         let bar = bar.pl_3().pr_0().child(div().w_4()).child(mac::caption_buttons(window, cx));
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         let _ = window;
         bar
     }
 
-    /// Windows has no menu bar, so the macOS menus open from a button.
+    /// Windows and Linux have no menu bar, so the macOS menus open from a button.
     fn menu_button(&self) -> impl IntoElement + use<> {
         let focus = self.focus.clone();
         Button::new("menu").icon(Icon::new(IconName::Menu)).ghost().small().tooltip("Menu").dropdown_menu(move |menu, window, cx| {
@@ -3320,7 +3340,7 @@ impl Editor {
                         .child(text)
                         .when_some(action, |d, action| {
                             let label = match action {
-                                ToastAction::Reveal(_) => crate::platform_text("Show in Finder", "Show in Explorer"),
+                                ToastAction::Reveal(_) => crate::os_text("Show in Finder", "Show in Explorer", "Show in Files"),
                                 ToastAction::Renumber => "Renumber",
                             };
                             d.cursor_pointer()

@@ -29,10 +29,14 @@ mod update;
 mod window_capture;
 #[cfg(windows)]
 mod win;
+#[cfg(target_os = "linux")]
+mod linux;
 
-// Windows answers to the macOS names, so the shared code calls one set of functions.
+// Windows and Linux answer to the macOS names, so the shared code calls one set of functions.
 #[cfg(windows)]
 use win::{self as mac, window_capture};
+#[cfg(target_os = "linux")]
+use linux::{self as mac, window_capture};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -166,7 +170,10 @@ enum Command {
 /// Tray and hotkeys stop working when these are dropped.
 struct Resident {
     tray: TrayIcon,
-    hotkeys: GlobalHotKeyManager,
+    /// `None` on Wayland, where the portal binds Kiri's shortcuts.
+    hotkeys: Option<GlobalHotKeyManager>,
+    #[cfg(target_os = "linux")]
+    portal_keys: Option<linux::portal::Shortcuts>,
     registered: Vec<HotKey>,
     bound: Arc<Mutex<HashMap<u32, Capture>>>,
     escape: HotKey,
@@ -175,9 +182,9 @@ struct Resident {
 
 impl Global for Resident {}
 
-/// Bindings are written with `cmd`, which is Ctrl on Windows.
+/// Bindings are written with `cmd`, which is Ctrl on Windows and Linux.
 pub fn keys(keys: &'static str) -> &'static str {
-    match cfg!(windows) {
+    match !cfg!(target_os = "macos") {
         true => Box::leak(keys.replace("cmd", "ctrl").into_boxed_str()),
         false => keys,
     }
@@ -200,20 +207,31 @@ pub fn shortcut_key(key: &str) -> &str {
     key
 }
 
-/// `mac` on macOS and `windows` on Windows, for text that names keys or parts of the system.
+/// `mac` on macOS and `windows` on Windows and Linux, for text that names keys or parts of the system.
 pub const fn platform_text(mac: &'static str, windows: &'static str) -> &'static str {
-    if cfg!(windows) { windows } else { mac }
+    if cfg!(target_os = "macos") { mac } else { windows }
+}
+
+/// `platform_text` for the few names Linux doesn't share with Windows.
+pub const fn os_text(mac: &'static str, windows: &'static str, linux: &'static str) -> &'static str {
+    if cfg!(target_os = "linux") { linux } else { platform_text(mac, windows) }
+}
+
+/// Whether Kiri reads the screen and places its own windows. A Wayland session allows
+/// neither, so there captures go through the desktop's screenshot portal and nothing floats.
+pub fn direct_screen() -> bool {
+    #[cfg(target_os = "linux")]
+    return linux::direct();
+    #[cfg(not(target_os = "linux"))]
+    true
 }
 
 /// A focused overlay can still miss `Esc` while AppKit finishes closing the
 /// previous one, so `Esc` is a global hotkey for exactly as long as an overlay is up.
 pub fn grab_escape(on: bool, cx: &App) {
     let resident = cx.global::<Resident>();
-    let result = if on {
-        resident.hotkeys.register(resident.escape)
-    } else {
-        resident.hotkeys.unregister(resident.escape)
-    };
+    let Some(hotkeys) = &resident.hotkeys else { return };
+    let result = if on { hotkeys.register(resident.escape) } else { hotkeys.unregister(resident.escape) };
     if let Err(err) = result {
         eprintln!("kiri: Esc hotkey: {err}");
     }
@@ -221,7 +239,9 @@ pub fn grab_escape(on: bool, cx: &App) {
 
 pub fn suspend_hotkeys(cx: &mut App) {
     let resident = cx.global_mut::<Resident>();
-    let _ = resident.hotkeys.unregister_all(&resident.registered);
+    if let Some(hotkeys) = &resident.hotkeys {
+        let _ = hotkeys.unregister_all(&resident.registered);
+    }
     resident.registered.clear();
     resident.bound.lock().unwrap().clear();
     resident.system_keys_off.get_or_insert_with(mac::SystemKeysOff::new);
@@ -231,11 +251,18 @@ pub fn suspend_hotkeys(cx: &mut App) {
 pub fn reload_hotkeys(cx: &mut App) -> Vec<String> {
     let wanted: Vec<(Capture, String)> = Capture::ALL
         .iter()
+        .filter(|c| c.available())
         .filter_map(|&c| settings::get(cx).hotkey(c).map(|k| (c, k)))
         .collect();
+    #[cfg(target_os = "linux")]
+    if !direct_screen() {
+        bind_portal_keys(wanted, cx);
+        return Vec::new();
+    }
     let resident = cx.global_mut::<Resident>();
     resident.system_keys_off = None;
-    let _ = resident.hotkeys.unregister_all(&resident.registered);
+    let Some(hotkeys) = &resident.hotkeys else { return Vec::new() };
+    let _ = hotkeys.unregister_all(&resident.registered);
     resident.registered.clear();
     let mut bound = resident.bound.lock().unwrap();
     bound.clear();
@@ -245,7 +272,7 @@ pub fn reload_hotkeys(cx: &mut App) -> Vec<String> {
             failed.push(keys);
             continue;
         };
-        match resident.hotkeys.register(hotkey) {
+        match hotkeys.register(hotkey) {
             Ok(()) => {
                 bound.insert(hotkey.id(), capture);
                 resident.registered.push(hotkey);
@@ -254,6 +281,44 @@ pub fn reload_hotkeys(cx: &mut App) -> Vec<String> {
         }
     }
     failed
+}
+
+/// Hands the shortcuts to the portal, which may ask the user and may bind other keys. The
+/// session before is closed first, so the desktop sees one set from Kiri.
+#[cfg(target_os = "linux")]
+fn bind_portal_keys(wanted: Vec<(Capture, String)>, cx: &mut App) {
+    use linux::portal::{Binding, bind, trigger};
+    cx.global_mut::<Resident>().portal_keys = None;
+    if wanted.is_empty() {
+        return;
+    }
+    let bindings = wanted
+        .iter()
+        .map(|(c, keys)| Binding { id: c.cli_name(), description: c.label().trim_end_matches('…').to_string(), trigger: Some(trigger(keys)) })
+        .collect();
+    let (pressed, mut ids) = mpsc::unbounded();
+    let (failed, why) = futures::channel::oneshot::channel();
+    let (keys, run) = bind(bindings, pressed, failed);
+    cx.global_mut::<Resident>().portal_keys = Some(keys);
+    cx.background_executor().spawn(run).detach();
+    cx.spawn(async move |cx| {
+        static TOLD: AtomicBool = AtomicBool::new(false);
+        if let Ok(why) = why.await {
+            eprintln!("kiri: the desktop can't bind shortcuts: {why}");
+            if !TOLD.swap(true, Ordering::Relaxed) {
+                cx.update(|cx| toast::show("This desktop doesn't let apps set shortcuts. Add them in its keyboard settings, as kiri --capture area", cx));
+            }
+        }
+    })
+    .detach();
+    cx.spawn(async move |cx| {
+        while let Some(id) = ids.next().await {
+            if let Some(capture) = Capture::from_cli(&id) {
+                cx.update(|cx| handle(Command::Capture(capture, Instant::now()), cx));
+            }
+        }
+    })
+    .detach();
 }
 
 /// `reload_hotkeys`, with one toast for the shortcuts the system refused.
@@ -347,6 +412,11 @@ fn main() {
         single::listen(tx.clone());
         #[cfg(windows)]
         win::update::note_installed_version();
+        #[cfg(target_os = "linux")]
+        {
+            linux::init(cx);
+            linux::install_menu_entry();
+        }
         let resident = install_resident(tx);
         cx.set_global(resident);
         for keys in reload_hotkeys(cx) {
@@ -367,7 +437,7 @@ fn main() {
 }
 
 fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
-    let hotkeys = GlobalHotKeyManager::new().expect("hotkey manager");
+    let hotkeys = direct_screen().then(|| GlobalHotKeyManager::new().expect("hotkey manager"));
     let escape = HotKey::new(None, Code::Escape);
     let escape_id = escape.id();
     let bound: Arc<Mutex<HashMap<u32, Capture>>> = Arc::default();
@@ -415,6 +485,8 @@ fn install_resident(tx: mpsc::UnboundedSender<Command>) -> Resident {
     Resident {
         tray,
         hotkeys,
+        #[cfg(target_os = "linux")]
+        portal_keys: None,
         registered: Vec::new(),
         bound,
         escape,
@@ -437,27 +509,26 @@ fn tray_menu(s: &settings::Settings, available: Option<&str>, installing: bool) 
     };
     let item = |c: Capture| labeled(c, c.label().to_string());
     let more = Submenu::new("More", true);
-    let delayed = labeled(Capture::Delayed, format!("Delayed Screenshot ({}s)", s.delay_seconds));
-    let delayed_area = labeled(Capture::DelayedArea, format!("Delayed Area Capture ({}s)", s.delay_seconds));
+    let _ = more.append(&labeled(Capture::Delayed, format!("Delayed Screenshot ({}s)", s.delay_seconds)));
+    let _ = more.append(&labeled(Capture::DelayedArea, format!("Delayed Area Capture ({}s)", s.delay_seconds)));
+    // A Wayland session leaves out what needs Kiri's own selection or floating windows.
+    for c in [Capture::RepeatArea, Capture::ActiveWindow, Capture::ScrollingUp].into_iter().filter(|c| c.available()) {
+        let _ = more.append(&item(c));
+    }
     let _ = more.append_items(&[
-        &delayed,
-        &delayed_area,
-        &item(Capture::RepeatArea),
-        &item(Capture::ActiveWindow),
-        &item(Capture::ScrollingUp),
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id("open", "Open File…", true, None),
         &MenuItem::with_id("paste", "Load From Clipboard", true, None),
-        &MenuItem::with_id("pins", "Close All Pins", true, None),
     ]);
+    if direct_screen() {
+        let _ = more.append(&MenuItem::with_id("pins", "Close All Pins", true, None));
+    }
     let menu = Menu::new();
+    let _ = menu.append_items(&[&item(Capture::Reopen), &PredefinedMenuItem::separator(), &item(Capture::Area), &item(Capture::Fullscreen)]);
+    for c in [Capture::Window, Capture::Scrolling].into_iter().filter(|c| c.available()) {
+        let _ = menu.append(&item(c));
+    }
     let _ = menu.append_items(&[
-        &item(Capture::Reopen),
-        &PredefinedMenuItem::separator(),
-        &item(Capture::Area),
-        &item(Capture::Fullscreen),
-        &item(Capture::Window),
-        &item(Capture::Scrolling),
         &item(Capture::Text),
         &more,
         &PredefinedMenuItem::separator(),
@@ -480,7 +551,7 @@ pub fn refresh_tray(cx: &mut App) {
     if let Some(item) = tray.ns_status_item() {
         mac::set_tray_badge(&item, available.is_some());
     }
-    #[cfg(windows)]
+    #[cfg(not(target_os = "macos"))]
     let _ = tray.set_icon(Some(tray_glyph(available.is_some())));
 }
 
@@ -490,6 +561,10 @@ pub fn open_file(cx: &mut App) {
 
 /// Captures an area into the editor in `editor` instead of opening a new one.
 pub fn add_capture(editor: AnyWindowHandle, cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    if !direct_screen() {
+        return portal_shot(PortalShot::Area, Some(editor), cx);
+    }
     if !mac::ensure_screen_access() {
         toast::show("Kiri needs Screen Recording permission", cx);
         return;
@@ -581,11 +656,20 @@ fn capture(capture: Capture, at: Instant, cx: &mut App) {
         Capture::Reopen => return editor::reopen_last(cx),
         _ => {}
     }
+    if !capture.available() {
+        toast::show(format!("{} isn't available on Wayland", capture.label().trim_end_matches('…')), cx);
+        return;
+    }
     if !mac::ensure_screen_access() {
         toast::show("Kiri needs Screen Recording permission", cx);
         return;
     }
     match capture {
+        #[cfg(target_os = "linux")]
+        Capture::Text if !direct_screen() => portal_shot(PortalShot::Text, None, cx),
+        // The desktop's picker offers windows too.
+        #[cfg(target_os = "linux")]
+        Capture::Window if !direct_screen() => portal_shot(PortalShot::Area, None, cx),
         Capture::Area | Capture::Text | Capture::Scrolling | Capture::ScrollingUp => {
             let mode = match capture {
                 Capture::Text => overlay::Mode::Text,
@@ -651,6 +735,10 @@ pub fn window_style(cx: &App) -> (settings::WindowBackground, u32) {
 }
 
 fn select_area(at: Instant, cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    if !direct_screen() {
+        return portal_shot(PortalShot::Area, None, cx);
+    }
     if settings::get(cx).kiri_selects() {
         return start_overlay(overlay::Mode::Area, at, None, cx);
     }
@@ -700,15 +788,74 @@ fn start_overlay(mode: overlay::Mode, at: Instant, add_to: Option<AnyWindowHandl
     .detach();
 }
 
+/// What a capture through the screenshot portal is for.
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, PartialEq)]
+enum PortalShot {
+    Area,
+    Screen,
+    Text,
+}
+
+/// A capture where Kiri can't read the screen itself. The desktop's own screenshot UI picks
+/// the area, then the image goes where Kiri's own capture would.
+#[cfg(target_os = "linux")]
+fn portal_shot(shot: PortalShot, add_to: Option<AnyWindowHandle>, cx: &mut App) {
+    static TAKING: AtomicBool = AtomicBool::new(false);
+    if TAKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let displays: f32 = cx.displays().iter().map(|d| d.bounds().size.width.as_f32()).sum();
+    cx.spawn(async move |cx| {
+        let taken = linux::portal::screenshot(shot != PortalShot::Screen).await;
+        let image = cx.background_executor().spawn(async move { taken.map(|b| b.and_then(|b| export::decode_bgra(&b))) }).await;
+        TAKING.store(false, Ordering::SeqCst);
+        cx.update(|cx| {
+            let (w, h, bgra) = match image {
+                Ok(Some((w, h, bgra, _))) => (w, h, bgra),
+                Ok(None) => return,
+                Err(err) => return toast::show(format!("Couldn't take a screenshot: {err}"), cx),
+            };
+            if shot == PortalShot::Text {
+                return ocr::recognize_and_copy(bgra, w, h, cx);
+            }
+            // The portal's image carries no scale. A whole screen gives it away; an area takes the windows'.
+            let scale = match shot {
+                PortalShot::Screen if displays > 0. => w as f32 / displays,
+                _ => cx.windows().iter().find_map(|w| w.update(cx, |_, window, _| window.scale_factor()).ok()).unwrap_or(1.),
+            };
+            let (image, scale) = (TiledImage::from_bgra(w, h, &bgra), scale.clamp(1., 4.));
+            match add_to {
+                Some(editor) => editor::add_capture(editor, image, scale, cx),
+                None => deliver(image, scale, None, cx),
+            }
+        });
+    })
+    .detach();
+}
+
 fn fullscreen(cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    if !direct_screen() {
+        return portal_shot(PortalShot::Screen, None, cx);
+    }
     let display = mac::display_under_cursor();
-    let displays: Vec<u32> = match settings::get(cx).fullscreen_all_displays {
+    let all = settings::get(cx).fullscreen_all_displays;
+    let displays: Vec<u32> = match all {
         true => cx.displays().iter().map(|d| u64::from(d.id()) as u32).collect(),
         false => vec![display],
     };
     cx.spawn(async move |cx| {
         let shot = if let [one] = displays[..] {
-            mac::capture_display(one).await
+            // X11 has one display for every monitor, so Kiri finds the one under the pointer itself.
+            #[cfg(target_os = "linux")]
+            let monitor = linux::monitor_under_cursor().filter(|_| !all);
+            #[cfg(not(target_os = "linux"))]
+            let monitor: Option<(f32, f32, f32, f32)> = None;
+            match monitor {
+                Some(area) => mac::capture_area(one, area).await,
+                None => mac::capture_display(one).await,
+            }
         } else {
             let shots = futures::future::join_all(displays.into_iter().map(mac::capture_display)).await;
             let Some(shots) = shots.into_iter().collect::<Option<Vec<_>>>() else {
@@ -747,11 +894,19 @@ pub fn open_clear_window<V: Render>(
 
 /// GPUI draws a window once while opening it, so a clear root must be clear before that.
 fn open_root<V: Render>(
-    options: WindowOptions,
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))] mut options: WindowOptions,
     clear: bool,
     cx: &mut App,
     build: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
 ) -> gpui_kit::Result<(AnyWindowHandle, Entity<V>)> {
+    // Kiri draws its own title bars, and the desktop finds the app's name and icon by the id.
+    #[cfg(target_os = "linux")]
+    {
+        options.app_id.get_or_insert_with(|| linux::APP_ID.to_string());
+        if options.kind == WindowKind::Normal {
+            options.window_decorations.get_or_insert(WindowDecorations::Client);
+        }
+    }
     // The system may have switched while no window was open to notice.
     sync_theme(cx.window_appearance(), cx);
     let mut built = None;
@@ -780,7 +935,7 @@ fn open_root<V: Render>(
 }
 
 fn sync_theme(appearance: WindowAppearance, cx: &mut App) {
-    #[cfg(windows)]
+    #[cfg(not(target_os = "macos"))]
     let appearance = mac::appearance(appearance);
     let dark = matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark);
     if Theme::global(cx).mode.is_dark() != dark {
@@ -820,10 +975,14 @@ impl Global for NextThen {}
 /// the file exists.
 pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App) {
     let s = settings::get(cx).clone();
-    let then = cx.default_global::<NextThen>().0.take().unwrap_or_else(|| {
+    let mut then = cx.default_global::<NextThen>().0.take().unwrap_or_else(|| {
         let thumbnail = s.after_show && s.area_preview == settings::Preview::Thumbnail;
         single::Then { edit: s.after_show && !thumbnail, thumbnail, copy: s.after_copy, save: s.after_save }
     });
+    // Wayland lets no window float where Kiri puts it, so the editor takes the thumbnail's place.
+    if then.thumbnail && !direct_screen() {
+        (then.thumbnail, then.edit) = (false, true);
+    }
     let thumbnail = then.thumbnail;
     if then.edit {
         editor::open(image.clone(), scale, display, None, cx);
@@ -882,10 +1041,13 @@ fn tray_glyph(badge: bool) -> tray_icon::Icon {
     let n = 36;
     let mut pixmap = Pixmap::new(n, n).expect("icon pixmap");
     let mut paint = Paint::default();
-    // macOS tints the template itself; Windows shows the pixels as drawn.
+    // macOS tints the template itself; Windows and Linux show the pixels as drawn, and
+    // GNOME's top bar, like most Linux panels, is dark.
     #[cfg(windows)]
     let ink = if mac::light_taskbar() { 0 } else { 255 };
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    let ink = 255;
+    #[cfg(target_os = "macos")]
     let ink = 0;
     paint.set_color_rgba8(ink, ink, ink, 255);
     paint.anti_alias = true;

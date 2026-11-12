@@ -95,8 +95,24 @@ jobs:
             dist/Kiri-windows-x64.zip
           if-no-files-found: error
 
+  linux:
+    needs: version
+    if: needs.version.outputs.new == 'true'
+    # The same image releasing by hand uses: a binary needs its build's glibc or older.
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    steps:
+      - uses: actions/checkout@v7
+      # Without git in the image, checkout downloads an archive, so the script runs through sh.
+      - run: sh scripts/release-linux.sh --setup
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/Kiri-linux-x64.tar.gz
+          if-no-files-found: error
+
   publish:
-    needs: [version, macos, windows]
+    needs: [version, macos, windows, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -110,5 +126,5 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
           NOTES: ${{ needs.version.outputs.notes }}
         run: |
-          printf '%s\n' "$NOTES" | gh release create "v$VERSION" dist/Kiri.dmg dist/Kiri-Setup.exe dist/Kiri-windows-x64.zip \
+          printf '%s\n' "$NOTES" | gh release create "v$VERSION" dist/Kiri.dmg dist/Kiri-Setup.exe dist/Kiri-windows-x64.zip dist/Kiri-linux-x64.tar.gz \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Kiri $VERSION" --notes-file - --latest

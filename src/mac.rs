@@ -566,7 +566,7 @@ pub fn print_png(png: &[u8], window: &Window) {
 
 /// The clipboard's image as premultiplied BGRA plus its pixels per point, so a Retina
 /// image pastes at its real size. Covers PNG, TIFF, PDF and copied image files.
-pub fn clipboard_image() -> Option<(u32, u32, Vec<u8>, f32)> {
+pub fn clipboard_image(_cx: &gpui_kit::App) -> Option<(u32, u32, Vec<u8>, f32)> {
     let board = NSPasteboard::generalPasteboard();
     if !NSImage::canInitWithPasteboard(&board) {
         return None;
