@@ -2,6 +2,14 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.3.0] - 2026-11-12
+
+### Added
+- Linux, new and not yet tried on every desktop: `Kiri-linux-x64.tar.gz` runs on Ubuntu 22.04 and later on x64. Extract it into a folder you own and run `Kiri/kiri`; Kiri adds itself to the app menu and updates itself in place. Please report what breaks.
+- Linux on X11: everything Kiri does on Windows, except Print, dragging images out, and the pin menu.
+- Linux on Wayland: area, window, text, and screen captures through the desktop's screenshot picker, hotkeys through the desktop where it allows apps to set them, and messages as notifications. Scrolling capture, Active Window, Repeat Area, Freeze the screen, the thumbnail, and pins need X11. Where the desktop can't bind Kiri's hotkeys, as GNOME on Ubuntu 22.04 and 24.04, bind `kiri --capture area` in its keyboard settings.
+- Linux: text recognition through Tesseract (`sudo apt install tesseract-ocr`).
+
 ## [0.2.8] - 2026-11-12
 
 ### Fixed
