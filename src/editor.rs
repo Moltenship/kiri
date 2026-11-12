@@ -537,6 +537,8 @@ pub struct Editor {
     contrast: Cell<Option<(PxRect, Option<(u32, u32)>)>>,
     /// How many of `TOOLS` fit in the toolbar at the last layout.
     shown_tools: Rc<Cell<usize>>,
+    /// The tools group's width last frame, which `shown_tools` is fitted to with the free space after it.
+    tools_width: Rc<Cell<f32>>,
     props_collapsed: bool,
     /// The OCR behind `text_lines`; dropping it cancels a run on pixels that are gone.
     text_task: Option<Task<()>>,
@@ -674,6 +676,7 @@ impl Editor {
             text_lines: None,
             contrast: Cell::new(None),
             shown_tools: Rc::new(Cell::new(TOOLS.len())),
+            tools_width: Rc::default(),
             props_collapsed: false,
             text_task: None,
             zoom: None,
@@ -2675,25 +2678,16 @@ impl Editor {
                 .child(icon_button("s-erase", IconName::Eraser, "Erase", Box::new(Delete)))
                 .child(icon_button("s-cancel", IconName::X, "Cancel selection", Box::new(Cancel)))
         } else {
-            let shown = self.shown_tools.clone();
-            let hidden = TOOLS[shown.get()..].contains(&self.tool);
-            // Tools that don't fit wrap onto a clipped second row; the More menu lists them instead.
-            let row = h_flex()
-                .min_w_0()
-                .h(px(24.))
-                .flex_wrap()
-                .overflow_hidden()
-                .gap(px(2.))
-                .on_children_prepainted(move |bounds, window, _| {
-                    let fit = bounds.iter().take_while(|b| b.origin.y == bounds[0].origin.y).count();
-                    // The ruler hint sits after Text and isn't a tool.
-                    let fit = if fit > 3 { fit - 1 } else { fit };
-                    // More shows or hides on the next frame, which changes what fits. Refresh is ignored mid-draw.
-                    if shown.replace(fit) != fit {
-                        window.request_animation_frame();
-                    }
-                })
-                .children(TOOLS.into_iter().flat_map(|tool| {
+            let shown = self.shown_tools.get();
+            let hidden = TOOLS[shown..].contains(&self.tool);
+            let width = self.tools_width.clone();
+            let group = h_flex()
+                .flex_none()
+                .p(px(TOOL_PAD))
+                .gap(px(TOOL_GAP))
+                .rounded(theme.radius_lg)
+                .bg(theme.muted)
+                .children(TOOLS[..shown].iter().flat_map(|&tool| {
                     let button = Button::new(("tool", tool as usize))
                         .icon(Icon::new(tool_icon(tool)))
                         .ghost()
@@ -2704,18 +2698,10 @@ impl Editor {
                         .on_click(cx.listener(move |this, _, window, cx| this.set_tool(tool, window, cx)));
                     // The ruler is held, not picked, so its button only explains the keys.
                     std::iter::once(button.into_any_element()).chain((tool == Tool::Text).then(|| ruler_hint().into_any_element()))
-                }));
-            h_flex()
-                .min_w_0()
-                .p(px(3.))
-                .gap(px(2.))
-                .rounded(theme.radius_lg)
-                .bg(theme.muted)
-                .child(row)
+                }))
                 // Add Capture and Paste Image are in the menus too, so More shows only for tools that don't fit.
-                .when(self.shown_tools.get() < TOOLS.len(), |d| d.child({
+                .when(shown < TOOLS.len(), |d| d.child({
                     let focus = self.focus.clone();
-                    let shown = self.shown_tools.clone();
                     let editor = cx.weak_entity();
                     Button::new("more")
                         .icon(Icon::new(IconName::Ellipsis))
@@ -2725,7 +2711,7 @@ impl Editor {
                         .selected(hidden)
                         .tooltip("More")
                         .dropdown_menu(move |menu, _, _| {
-                            let tail = &TOOLS[shown.get()..];
+                            let tail = &TOOLS[shown..];
                             tail.iter()
                                 .fold(menu.action_context(focus.clone()), |menu, &tool| {
                                     // Tool actions only bind while the canvas has focus, which the open menu holds.
@@ -2740,7 +2726,14 @@ impl Editor {
                                 .menu("Add Capture", Box::new(AddCapture))
                                 .menu("Paste Image", Box::new(Paste))
                         })
-                }))
+                }));
+            // Shrinks and clips the group when the bar is too narrow, so its width still says what fits.
+            div()
+                .relative()
+                .min_w_0()
+                .overflow_hidden()
+                .child(group)
+                .child(canvas(move |b, _, _| width.set(b.size.width.as_f32()), |_, _, _, _| {}).absolute().size_full())
         };
 
         let zoom_pct = (self.view().k * self.scale * 100.).round();
@@ -2834,6 +2827,18 @@ impl Editor {
                 div()
                     .flex_1()
                     .h_full()
+                    .relative()
+                    .when(self.selection.is_none(), |d| {
+                        let (shown, width) = (self.shown_tools.clone(), self.tools_width.clone());
+                        // The tools group can take the free space here too. Refresh is ignored mid-draw.
+                        let fit = move |b: Bounds<Pixels>, window: &mut Window, _: &mut App| {
+                            let fit = tools_that_fit(width.get() + b.size.width.as_f32());
+                            if shown.replace(fit) != fit {
+                                window.request_animation_frame();
+                            }
+                        };
+                        d.child(canvas(fit, |_, _, _, _| {}).absolute().size_full())
+                    })
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
                     .when(cfg!(windows), |d| d.window_control_area(WindowControlArea::Drag)),
             )
@@ -3460,6 +3465,20 @@ fn paint_checker(bounds: Bounds<Pixels>, base: Hsla, window: &mut Window) {
 fn paint_handle(p: Point<Pixels>, accent: Hsla, window: &mut Window) {
     let b = Bounds::new(p - point(px(HANDLE), px(HANDLE)), size(px(HANDLE * 2.), px(HANDLE * 2.)));
     window.paint_quad(quad(b, px(HANDLE), gpui_kit::white(), px(1.5), accent, BorderStyle::Solid));
+}
+
+/// Tool buttons are `small` icon buttons, 24 pt square, 2 pt apart in a group padded by 3 pt.
+const TOOL_BUTTON: f32 = 24.;
+const TOOL_GAP: f32 = 2.;
+const TOOL_PAD: f32 = 3.;
+
+/// How many tools fit in `width`, counting the ruler hint after Text, and More after the last one when some don't fit.
+fn tools_that_fit(width: f32) -> usize {
+    let span = |k: usize| {
+        let items = k + usize::from(k > 2) + usize::from(k < TOOLS.len());
+        2. * TOOL_PAD + items as f32 * TOOL_BUTTON + items.saturating_sub(1) as f32 * TOOL_GAP
+    };
+    (0..=TOOLS.len()).rev().find(|&k| span(k) <= width + 0.5).unwrap_or(0)
 }
 
 /// Ghost's selected fill is all but the toolbar's own in the dark theme, so the active tool takes the accent.
