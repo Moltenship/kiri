@@ -20,11 +20,20 @@ The macOS build signs with the `Developer ID Application: Timofei Maksimov (Q9SD
 - `MACOS_CERTIFICATE_PASSWORD`: the password set on that export.
 - `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_P8`, the contents of the `.p8` file: `gh secret set ASC_KEY_P8 < AuthKey_<id>.p8`.
 
-## Building locally
+## Releasing by hand
 
-`scripts/release.sh` builds the same signed, notarized `dist/Kiri.dmg` on a Mac with the identity in the login keychain, the key in `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH`, and `python3`. The first run installs [dmgbuild](https://github.com/dmgbuild/dmgbuild), which lays out the DMG window, into `~/.cache/kiri-dmg`. `KIRI_IDENTITY` overrides the identity's name.
+For a quick release from your own machines, skip the workflow and publish as before:
 
-On Windows, `scripts\release-windows.ps1` builds `dist\Kiri-Setup.exe`, the installer from [`windows/Kiri.iss`](../../windows/Kiri.iss), which users download, and `dist\Kiri-windows-x64.zip`, with `Kiri\Kiri.exe` inside, which the updater downloads and which also serves as a portable copy. It needs the Rust toolchain and Inno Setup 6. Install that for the current user, with no admin prompt:
+1. Bump the version and the CHANGELOG as above, and put `[skip ci]` in the commit message, so the push doesn't start the workflow too. Without it both race to create the release, and the loser fails.
+2. Push to `main`: GitHub only tags commits it has.
+3. On a Mac, run `scripts/release.sh --publish`. It builds, signs, and notarizes `dist/Kiri.dmg`, then creates release `v<version>` at HEAD with it.
+4. Right after, on Windows at the same commit, run `scripts\release-windows.ps1 -Upload`. It builds `dist\Kiri-Setup.exe` and `dist\Kiri-windows-x64.zip` and adds both to the release. Until the zip is there, Windows Kiris that check report that the release has none, and the site's Download for Windows links the latest release's setup.
+
+Without `--publish` or `-Upload` the scripts only build.
+
+`release.sh` needs the identity in the login keychain, the key in `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH`, `gh` signed in with push access, and `python3`. Its first run installs [dmgbuild](https://github.com/dmgbuild/dmgbuild), which lays out the DMG window, into `~/.cache/kiri-dmg`. `KIRI_IDENTITY` overrides the identity's name.
+
+`release-windows.ps1` needs the Rust toolchain, `gh` signed in, and Inno Setup 6, which builds the setup from [`windows/Kiri.iss`](../../windows/Kiri.iss). Install it for the current user, with no admin prompt:
 
 ```powershell
 winget install --id JRSoftware.InnoSetup -e --scope user --override "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER"
