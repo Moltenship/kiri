@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.2.7] - 2026-11-12
+
+### Fixed
+- The editor's toolbar shows every tool that fits, and the More (…) button comes right after the last one. At some window widths a wide gap opened before it.
+
 ## [0.2.6] - 2026-11-11
 
 ### Added
