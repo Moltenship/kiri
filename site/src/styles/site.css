@@ -134,18 +134,12 @@ kbd:not(.ss-key) {
   color: var(--ink-3);
   font-size: 13px;
 }
-.platform, .soon { display: inline-flex; align-items: center; gap: 6px; }
+.platform { display: inline-flex; align-items: center; gap: 6px; }
 .all { color: var(--ink-2); text-underline-offset: 3px; }
 .all:hover { color: var(--ink); }
-[data-for='windows'], :root[data-os='windows'] [data-for='mac'] { display: none; }
-:root[data-os='windows'] [data-for='windows'] { display: inline-flex; }
-.soon {
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 500;
-}
+/* data-os is set only off the Mac, which the page is built for. */
+[data-for~='windows'], [data-for~='linux'], :root[data-os] [data-for='mac'] { display: none; }
+:root[data-os='windows'] [data-for~='windows'], :root[data-os='linux'] [data-for~='linux'] { display: inline-flex; }
 
 .demo {
   max-width: 1160px;
