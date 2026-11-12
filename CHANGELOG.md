@@ -2,6 +2,11 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.2.8] - 2026-11-12
+
+### Fixed
+- Hovering a button in the editor's toolbar visibly highlights it, in both the light and dark themes. Menu items highlight a little more too.
+
 ## [0.2.7] - 2026-11-12
 
 ### Fixed
