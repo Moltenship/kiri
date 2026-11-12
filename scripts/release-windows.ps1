@@ -1,6 +1,8 @@
 # Builds dist\Kiri-Setup.exe, the installer, and dist\Kiri-windows-x64.zip, which holds Kiri\Kiri.exe
-# for the updater and a portable copy. .github/workflows/release.yml publishes both.
-# Kiri isn't code-signed on Windows yet. See docs/operations/release.md.
+# for the updater and a portable copy. With -Upload it adds both to the GitHub release v<version>
+# that scripts/release.sh --publish created. Kiri isn't code-signed on Windows yet.
+# See docs/operations/release.md.
+param([switch]$Upload)
 Set-Location (Join-Path $PSScriptRoot '..')
 
 function Check($what) {
@@ -19,6 +21,13 @@ $iscc = @(
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $iscc) { throw 'Inno Setup 6 is missing; see docs/operations/release.md.' }
 
+if ($Upload) {
+    git diff --quiet HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Commit first: the assets are built from HEAD.' }
+    gh release view "v$version" --json tagName | Out-Null
+    Check "Finding release v$version (scripts/release.sh --publish creates it)"
+}
+
 cargo build --release
 Check 'cargo build'
 Remove-Item -Recurse -Force $dir, $zip, $setup -ErrorAction SilentlyContinue
@@ -30,3 +39,8 @@ Check 'tar'
 & $iscc /Q /Odist "/DAppVersion=$version" "/DNumericVersion=$($version -replace '-.*')" "/DExe=$((Resolve-Path "$dir\Kiri.exe").Path)" windows\Kiri.iss
 Check 'Inno Setup'
 Write-Output "Built $setup and $zip ($version)"
+
+if ($Upload) {
+    gh release upload "v$version" $setup $zip --clobber
+    Check 'gh release upload'
+}
