@@ -1,0 +1,114 @@
+# Releases v<version> from Cargo.toml when a push to main carries a version that has no release yet.
+# See docs/operations/release.md.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+
+env:
+  RUSTUP_TOOLCHAIN: 1.99.0
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      new: ${{ steps.check.outputs.new }}
+      notes: ${{ steps.check.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --json tagName > /dev/null 2>&1; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NOTES=$(awk -v v="$VERSION" '$0 ~ "^## \\[?" v "[] ]" {on=1; next} /^## / {on=0} on' CHANGELOG.md)
+          [ -n "$NOTES" ] || { echo "::error::CHANGELOG.md has no section for $VERSION."; exit 1; }
+          echo "new=true" >> "$GITHUB_OUTPUT"
+          { echo "notes<<KIRI_NOTES"; printf '%s\n' "$NOTES"; echo "KIRI_NOTES"; } >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    if: needs.version.outputs.new == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: Import the Developer ID identity and the App Store Connect key
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          KEYCHAIN=$RUNNER_TEMP/kiri.keychain-db
+          PASSWORD=$(uuidgen)
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/kiri.p12"
+          security import "$RUNNER_TEMP/kiri.p12" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # Without the partition list codesign waits on a keychain prompt nobody can answer.
+          security set-key-partition-list -S apple-tool:,apple: -k "$PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc.p8" >> "$GITHUB_ENV"
+      - run: scripts/release.sh
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/Kiri.dmg
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    if: needs.version.outputs.new == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Inno Setup
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - run: scripts\release-windows.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: |
+            dist/Kiri-Setup.exe
+            dist/Kiri-windows-x64.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [version, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          NOTES: ${{ needs.version.outputs.notes }}
+        run: |
+          printf '%s\n' "$NOTES" | gh release create "v$VERSION" dist/Kiri.dmg dist/Kiri-Setup.exe dist/Kiri-windows-x64.zip \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Kiri $VERSION" --notes-file - --latest

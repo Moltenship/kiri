@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Kiri.app, signs and notarizes it in Kiri.dmg, and with --publish uploads that as a GitHub release.
+# Builds Kiri.app, signs and notarizes it in Kiri.dmg. .github/workflows/release.yml publishes it.
 # Needs a Developer ID identity in the keychain and an App Store Connect API key in
 # ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH. See docs/operations/release.md.
 set -eu
@@ -13,12 +13,6 @@ DMG=dist/Kiri.dmg
 # dmgbuild lays out the DMG window without scripting Finder.
 DMGBUILD=$HOME/.cache/kiri-dmg/venv/bin/dmgbuild
 : "${ASC_KEY_ID:?}" "${ASC_ISSUER_ID:?}" "${ASC_KEY_PATH:?}"
-
-if [ "${1:-}" = "--publish" ]; then
-    git diff --quiet HEAD || { echo "Commit first: the release is tagged at HEAD." >&2; exit 1; }
-    NOTES=$(awk -v v="$VERSION" '$0 ~ "^## \\[?" v "[] ]" {on=1; next} /^## / {on=0} on' CHANGELOG.md)
-    [ -n "$NOTES" ] || { echo "CHANGELOG.md has no section for $VERSION." >&2; exit 1; }
-fi
 
 cargo build --release
 rm -rf "$APP" "$ZIP" "$DMG"
@@ -46,6 +40,3 @@ xcrun notarytool submit "$DMG" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --is
 xcrun stapler staple "$DMG"
 spctl --assess --type open --context context:primary-signature "$DMG"
 echo "Built $DMG ($VERSION)"
-
-[ "${1:-}" = "--publish" ] || exit 0
-printf '%s\n' "$NOTES" | gh release create "v$VERSION" "$DMG" --target "$(git rev-parse HEAD)" --title "Kiri $VERSION" --notes-file - --latest

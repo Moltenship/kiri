@@ -1,36 +1,38 @@
 # Releasing Kiri
 
-`scripts/release.sh` builds `dist/Kiri.app`, signs it with the Developer ID, notarizes and staples it, and packs it in `dist/Kiri.dmg`, which is notarized too. With `--publish` it also creates the GitHub release `v<version>` at HEAD with the DMG, and that version's CHANGELOG section as the notes. Versions are stable, with no `-beta` suffix, and each release is published as Latest: the updater and the site's Download button both read GitHub's latest release, which skips pre-releases.
+A push to `main` whose `Cargo.toml` version has no GitHub release yet releases it: [`.github/workflows/release.yml`](../../.github/workflows/release.yml) builds the macOS and Windows assets, then creates release `v<version>` at that commit with all of them, and that version's CHANGELOG section as the notes. Nothing is published unless both builds pass, so Windows Kiris never see a release without their zip. A push that keeps the version does nothing. To retry a failed release, fix it and push, or run the workflow from the Actions tab.
 
-## Once per machine
-
-- The `Developer ID Application: Timofei Maksimov (Q9SDRFKBC6)` identity, with its private key, in the login keychain. Only the Account Holder can create one, at developer.apple.com → Certificates. Export it as a `.p12` from Keychain Access to move it to another Mac. `KIRI_IDENTITY` overrides the name.
-- An App Store Connect API key of the same team, for `notarytool`, in `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH`.
-- `gh` signed in with push access to the repository.
-- `python3`. The first run installs [dmgbuild](https://github.com/dmgbuild/dmgbuild), which lays out the DMG window, into `~/.cache/kiri-dmg`.
-- On Windows: the Rust toolchain, `gh` signed in, and Inno Setup 6, which builds `Kiri-Setup.exe`. Install it for the current user, with no admin prompt:
-
-  ```powershell
-  winget install --id JRSoftware.InnoSetup -e --scope user --override "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER"
-  ```
+Versions are stable, with no `-beta` suffix, and each release is published as Latest: the updater and the site's Download button both read GitHub's latest release, which skips pre-releases.
 
 ## Each release
 
 1. Set `version` in `Cargo.toml`, for example `0.1.1`.
-2. Add a `## [0.1.1] - YYYY-MM-DD` section at the top of `CHANGELOG.md`.
-3. Commit and push.
-4. Run `scripts/release.sh --publish`.
+2. Add a `## [0.1.1] - YYYY-MM-DD` section at the top of `CHANGELOG.md`. Without it the run fails before building.
+3. Commit and push to `main`.
 
 Running Kiris see the release within a day, or right away from Check for Updates… in the tray menu.
 
+## Repository secrets
+
+The macOS build signs with the `Developer ID Application: Timofei Maksimov (Q9SDRFKBC6)` identity and notarizes with an App Store Connect API key of the same team. Only the Account Holder can create the identity, at developer.apple.com → Certificates.
+
+- `MACOS_CERTIFICATE_P12`: the identity with its private key, exported as a `.p12` from Keychain Access → My Certificates, base64-encoded: `base64 -i Kiri.p12 | gh secret set MACOS_CERTIFICATE_P12`.
+- `MACOS_CERTIFICATE_PASSWORD`: the password set on that export.
+- `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_P8`, the contents of the `.p8` file: `gh secret set ASC_KEY_P8 < AuthKey_<id>.p8`.
+
+## Building locally
+
+`scripts/release.sh` builds the same signed, notarized `dist/Kiri.dmg` on a Mac with the identity in the login keychain, the key in `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH`, and `python3`. The first run installs [dmgbuild](https://github.com/dmgbuild/dmgbuild), which lays out the DMG window, into `~/.cache/kiri-dmg`. `KIRI_IDENTITY` overrides the identity's name.
+
+On Windows, `scripts\release-windows.ps1` builds `dist\Kiri-Setup.exe`, the installer from [`windows/Kiri.iss`](../../windows/Kiri.iss), which users download, and `dist\Kiri-windows-x64.zip`, with `Kiri\Kiri.exe` inside, which the updater downloads and which also serves as a portable copy. It needs the Rust toolchain and Inno Setup 6. Install that for the current user, with no admin prompt:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e --scope user --override "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER"
+```
+
 ## Windows
 
-After the macOS release exists, run `scripts\release-windows.ps1 -Upload` on Windows from the same commit. It builds two assets and adds both to release `v<version>`:
-
-- `dist\Kiri-Setup.exe`, the installer from [`windows/Kiri.iss`](../../windows/Kiri.iss), which users download.
-- `dist\Kiri-windows-x64.zip`, with `Kiri\Kiri.exe` inside, which the updater downloads and which also serves as a portable copy.
-
-Both take their version from `Cargo.toml`. Without `-Upload` the script only builds them. Until the zip is on the release, Windows Kiris that check report that the release has none. The site's Download for Windows links the latest release's setup, so upload right after the macOS release. Neither asset is code-signed, so SmartScreen warns on its first run from a browser download.
+Neither Windows asset is code-signed, so SmartScreen warns on its first run from a browser download.
 
 Never change the setup's `AppId`: later setups find the install by it and upgrade it in place, and [`src/win/update.rs`](../../src/win/update.rs) reads the Settings → Apps entry under it.
 
