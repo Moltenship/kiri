@@ -2,6 +2,16 @@
 
 All notable changes to Kiri. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.3.1] - 2026-11-24
+
+### Added
+- Settings → General → Save format has WebP and AVIF. WebP keeps every pixel in about half the size of a PNG. AVIF is the smallest, several times smaller than a PNG, with a loss that is hard to see even in small text.
+- AVIF takes up to a second to save. Images too large for either format, such as long scrolling captures, stay PNG. Kiri opens WebP files, but not AVIF.
+
+### Changed
+- With Save format set to PNG, saved files are up to 45% smaller, with the same pixels. Auto already wrote PNGs this compact. Copying is as fast as before.
+- Saving from the thumbnail no longer holds Kiri up while the file is written.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
