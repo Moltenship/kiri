@@ -14,7 +14,7 @@ use gpui_kit::component::{ActiveTheme, Icon, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::settings::{self, AreaSelection, Capture, ColorFormat, Preview, WindowBackground};
+use crate::settings::{self, AreaSelection, Capture, ColorFormat, Preview, SaveFormat, WindowBackground};
 
 actions!(settings_window, [CloseSettings]);
 
@@ -347,7 +347,12 @@ fn button(id: &'static str, label: &'static str, on_click: impl Fn(&mut App) + '
     Button::new(id).label(label).outline().small().on_click(move |_, _, cx| on_click(cx))
 }
 
-const SAVE_FORMATS: &[(bool, &str)] = &[(false, "PNG"), (true, "Auto (PNG or JPEG)")];
+const SAVE_FORMATS: &[(SaveFormat, &str)] = &[
+    (SaveFormat::Auto, "Auto (PNG or JPEG)"),
+    (SaveFormat::Png, "PNG"),
+    (SaveFormat::WebP, "WebP"),
+    (SaveFormat::Avif, "AVIF"),
+];
 const HIDE_AFTER: &[(u32, &str)] = &[(0, "Manually"), (3, "After 3 seconds"), (5, "After 5 seconds"), (10, "After 10 seconds")];
 const SELECTIONS: &[(AreaSelection, &str)] = &[(AreaSelection::System, "macOS"), (AreaSelection::Kiri, "Kiri")];
 const CMD_Q: &[(settings::CmdQ, &str)] = &[
@@ -411,11 +416,15 @@ fn general(file_name: &Entity<InputState>, cx: &App) -> Page {
                 [
                     row("Save folder", folder).description(dir),
                     row("File name", Input::new(file_name).small().w(px(240.))).description(format!(
-                        "Saves as “{}.png”. %Y, %m, %d, %H, %M, and %S fill in the time.",
+                        "Saves as “{}”. %Y, %m, %d, %H, %M, and %S fill in the time.",
                         crate::settings::file_stem(&now.file_name)
                     )),
-                    row("Save format", choice("format", SAVE_FORMATS, |s| s.save_auto_jpeg, |s, v| s.save_auto_jpeg = v, cx))
-                        .description("Auto saves a JPEG when it is smaller, which suits photos. Transparent images stay PNG."),
+                    row("Save format", choice("format", SAVE_FORMATS, |s| s.save_format, |s, v| s.save_format = v, cx)).description(match now.save_format {
+                        SaveFormat::Auto => "Saves a JPEG when it is smaller, which suits photos. Transparent images stay PNG.",
+                        SaveFormat::Png => "Every pixel as captured. Opens anywhere.",
+                        SaveFormat::WebP => "Every pixel as captured, in about half the size of a PNG.",
+                        SaveFormat::Avif => "The smallest file, close to the original. Takes longer to save, and very large images stay PNG.",
+                    }),
                     row(crate::platform_text("Downscale Retina screenshots", "Downscale high-DPI screenshots"), toggle("downscale", |s| s.downscale_retina, |s, v| s.downscale_retina = v, cx))
                         .description("Copy and save at one pixel per point."),
                 ],

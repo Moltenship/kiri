@@ -994,20 +994,20 @@ pub fn deliver(image: TiledImage, scale: f32, display: Option<u32>, cx: &mut App
         return;
     }
     let save_to = then.save.then(|| s.save_path());
-    let (auto, copy, edit, name) = (s.save_auto_jpeg, then.copy, then.edit, s.file_name.clone());
+    let (format, copy, edit, name) = (s.save_format, then.copy, then.edit, s.file_name.clone());
     cx.spawn(async move |cx| {
         let shot = image.clone();
         let (png, temp, saved) = cx
             .background_executor()
             .spawn(async move {
-                let png = export::encode_bgra(shot.width, shot.height, shot.read(shot.full()), scale);
-                let temp = copy.then(|| editor::write_temp(&png, &name)).flatten();
-                let saved = save_to.and_then(|path| export::save_capture(&shot, scale, png.clone(), path, auto).ok());
+                let png = copy.then(|| export::encode_bgra(shot.width, shot.height, shot.read(shot.full()), scale));
+                let temp = png.as_ref().and_then(|png| editor::write_temp(png, &name));
+                let saved = save_to.and_then(|path| export::save_capture(&shot, scale, path, format).ok());
                 (png, temp, saved)
             })
             .await;
         cx.update(|cx| {
-            if copy {
+            if let Some(png) = png {
                 mac::copy_png(&png, temp.as_deref());
             }
             if thumbnail {

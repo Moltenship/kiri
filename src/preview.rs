@@ -140,10 +140,16 @@ impl Preview {
             .saved
             .clone()
             .unwrap_or_else(|| settings::get(cx).save_path());
-        match export::save_capture(&self.image, self.scale, self.png(), path, settings::get(cx).save_auto_jpeg) {
-            Ok(path) => crate::toast::saved(path, cx),
-            Err(err) => crate::toast::show(format!("Couldn't save: {err}"), cx),
-        }
+        let (image, scale, format) = (self.image.clone(), self.scale, settings::get(cx).save_format);
+        let write = cx.background_spawn(async move { export::save_capture(&image, scale, path, format) });
+        cx.spawn(async move |_, cx| {
+            let result = write.await;
+            cx.update(|cx| match result {
+                Ok(path) => crate::toast::saved(path, cx),
+                Err(err) => crate::toast::show(format!("Couldn't save: {err}"), cx),
+            });
+        })
+        .detach();
         self.close(window, cx);
     }
 

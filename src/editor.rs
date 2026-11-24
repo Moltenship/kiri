@@ -2347,12 +2347,12 @@ fn straight(premultiplied: &[u8], alpha: f32) -> Vec<u8> {
         .collect()
 }
 
-/// Encodes off the main thread; Auto JPEG may change the extension.
+/// Encodes off the main thread; the save format sets the extension.
 /// Encodes run in parallel, so a save that finishes after a newer one to the same file skips its write.
 fn write_later(pixmap: Arc<(tiny_skia::Pixmap, f32)>, path: PathBuf, cx: &App) -> Task<Result<PathBuf, String>> {
     static LATEST: std::sync::Mutex<Vec<(PathBuf, u64)>> = std::sync::Mutex::new(Vec::new());
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let auto = settings::get(cx).save_auto_jpeg;
+    let format = settings::get(cx).save_format;
     let generation = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     {
         let mut latest = LATEST.lock().unwrap_or_else(|e| e.into_inner());
@@ -2361,7 +2361,7 @@ fn write_later(pixmap: Arc<(tiny_skia::Pixmap, f32)>, path: PathBuf, cx: &App) -
     }
     cx.background_spawn(async move {
         let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
-        let (bytes, ext) = export::for_save(&pixmap.0, pixmap.1, auto);
+        let (bytes, ext) = export::for_save(&pixmap.0, pixmap.1, format);
         let mut latest = LATEST.lock().unwrap_or_else(|e| e.into_inner());
         let stale = latest.iter().any(|(p, g)| *p == path && *g != generation);
         latest.retain(|(p, g)| !(*p == path && *g == generation));

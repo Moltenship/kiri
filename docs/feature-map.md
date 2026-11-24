@@ -101,7 +101,7 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Saved PNGs record their pixels-per-point, so a Retina screenshot reopens at its real size. On macOS saved files carry the screenshot tag, as the system's own do; Windows has no such tag.
 - Dropping an image file on the editor adds it as an image object where it lands, like Paste Image.
 - Save goes straight to the save folder, the Desktop until one is chosen in settings, where the alternative first asks for a folder. A second Save overwrites the file it wrote. Save As proposes the opened or last saved file's name and folder, and a timestamped name otherwise. General → File name is a visible strftime template, `Kiri %Y-%m-%d at %H.%M.%S` by default, where the alternative hides its `fileNameTemplate`; it names copied and dragged files too.
-- Save format: Auto by default, as in the alternative, or PNG. Auto keeps a JPEG (quality 92) only when it is smaller than a compactly compressed PNG. Transparent images stay PNG. Copy always uses the fast PNG.
+- Save format: Auto by default, as in the alternative, or PNG, WebP, or AVIF. Auto keeps a JPEG (quality 92) only when it is smaller than the PNG; transparent images stay PNG. WebP is lossless, from libwebp: about half the size of the PNG for up to half a second, where the pure-Rust encoder GPUI ships saves only a quarter. AVIF is lossy (quality 80), for the smallest file; its encoder holds about 32 MB per megapixel, so images over 24 megapixels stay PNG. Saved PNGs are compactly compressed, about half the size of the fast PNG that Copy always uses. A PNG optimizer and palettes stay out: an optimizer gains under 10% for a second of work, and screenshots have too many colors for a palette.
 - Clicking the size opens the pt/px switch and Resize: 25% to 4× presets or exact pixels, with the aspect ratio locked. Resize merges annotations into the image as in the alternative, but unlike there it can be undone.
 - While an editor is open, Kiri is a regular app: Dock, `⌘Tab`, and a menu bar like the alternative's (File, Edit, Draw, Zoom) that lists every command with its shortcut, including those with no toolbar button (Reset Crop, Rasterize, Print). Bare-letter shortcuts never fire from the menu while typing. With no editor open it lives only in the tray.
 
@@ -190,7 +190,6 @@ Press a hotkey, grab part of the screen, and land in a fast editor. Annotate, re
 - Appearance: System, Light, or Dark, picked from small drawings of a Kiri window. It sets the app's appearance, so blurred window backgrounds follow it too. GPUI on Windows only reads Windows' own, so Kiri picks its colors from the setting itself and sets each window's light or dark blur through DWM; the tray menu follows Windows.
 - A choice that changes how something looks is picked from small drawings: Appearance, Show in (editor or thumbnail), and Window background. Numbers without natural steps, such as max scroll height, are typed in.
 - Dropped from the alternative: uploading, license, splash, diagnostics.
-- Consider WebP as a save format.
 
 ## Cross-platform notes
 

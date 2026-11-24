@@ -10,6 +10,7 @@ use tiny_skia::{
 
 use crate::doc::{Ctx, LINE_HEIGHT, Object, Prim, R, Seg, scene};
 use crate::pixels;
+use crate::settings::SaveFormat;
 use crate::tiled::{PxRect, TiledImage};
 
 pub struct Scene<'a> {
@@ -210,15 +211,17 @@ fn draw(pixmap: &mut Pixmap, prim: &Prim, image: &TiledImage, t: Transform, canv
     }
 }
 
-/// Fast PNG: the capture-to-clipboard loop is dominated by encoding. The density
-/// records pixels per point (72 dpi each), as macOS screenshots do.
+/// Fast PNG: the capture-to-clipboard loop is dominated by encoding.
 pub fn encode_png(pixmap: &Pixmap, scale: f32) -> Vec<u8> {
-    encode_png_with(pixmap, scale, png::Compression::Fast)
+    let (rgba, _) = straight(pixmap);
+    png_bytes(pixmap.width(), pixmap.height(), &rgba, png::ColorType::Rgba, scale, png::Compression::Fast)
 }
 
-fn encode_png_with(pixmap: &Pixmap, scale: f32, compression: png::Compression) -> Vec<u8> {
+/// The pixels with straight alpha, as encoders take them, and whether all are opaque.
+fn straight(pixmap: &Pixmap) -> (Vec<u8>, bool) {
     let mut data = pixmap.data().to_vec();
-    if data.chunks_exact(4).any(|p| p[3] != 255) {
+    let opaque = data.chunks_exact(4).all(|p| p[3] == 255);
+    if !opaque {
         for p in data.chunks_exact_mut(4) {
             let a = p[3] as u32;
             if a > 0 && a < 255 {
@@ -228,46 +231,80 @@ fn encode_png_with(pixmap: &Pixmap, scale: f32, compression: png::Compression) -
             }
         }
     }
+    (data, opaque)
+}
+
+/// The density records pixels per point (72 dpi each), as macOS screenshots do.
+fn png_bytes(w: u32, h: u32, data: &[u8], color: png::ColorType, scale: f32, compression: png::Compression) -> Vec<u8> {
     let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, pixmap.width(), pixmap.height());
-    encoder.set_color(png::ColorType::Rgba);
+    let mut encoder = png::Encoder::new(&mut out, w, h);
+    encoder.set_color(color);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.set_compression(compression);
     let ppm = (2834.6 * scale).round() as u32;
     encoder.set_pixel_dims(Some(png::PixelDimensions { xppu: ppm, yppu: ppm, unit: png::Unit::Meter }));
     if let Ok(mut writer) = encoder.write_header() {
-        let _ = writer.write_image_data(&data);
+        let _ = writer.write_image_data(data);
     }
     out
 }
 
-/// What Save writes, and its extension. Auto keeps a JPEG only when it is smaller than
-/// the PNG; transparency and sides past JPEG's 65535 limit stay PNG.
-pub fn for_save(pixmap: &Pixmap, scale: f32, auto: bool) -> (Vec<u8>, &'static str) {
-    if !auto {
-        return (encode_png(pixmap, scale), "png");
+/// Lossless, from libwebp at cwebp's `-z 2`: more effort takes longer for the same size.
+fn webp_bytes(rgba: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
+    let mut config = webp::WebPConfig::new().ok()?;
+    // Without `exact` libwebp rewrites the color under fully transparent pixels.
+    (config.lossless, config.exact, config.method, config.quality) = (1, 1, 2, 25.);
+    let fits = w.max(h) <= 16383;
+    fits.then(|| webp::Encoder::from_rgba(rgba, w, h).encode_advanced(&config).ok()).flatten().map(|webp| webp.to_vec())
+}
+
+/// rav1e holds about 32 MB per megapixel while it encodes, so a long scrolling capture would take gigabytes.
+const AVIF_MAX_PIXELS: u32 = 24_000_000;
+
+/// What Save writes, and its extension. An image the chosen format can't hold stays PNG:
+/// transparency and sides past 65535 for JPEG, sides past 16383 for WebP.
+pub fn for_save(pixmap: &Pixmap, scale: f32, format: SaveFormat) -> (Vec<u8>, &'static str) {
+    use image::ImageEncoder;
+    use image::codecs::{avif::AvifEncoder, jpeg};
+    let (w, h) = (pixmap.width(), pixmap.height());
+    let (rgba, opaque) = straight(pixmap);
+    let mut out = Vec::new();
+    match format {
+        SaveFormat::WebP => {
+            if let Some(webp) = webp_bytes(&rgba, w, h) {
+                return (webp, "webp");
+            }
+        }
+        // Speed 8 of 10: slower speeds no longer shrink a screenshot, and 10 writes it half again as large.
+        SaveFormat::Avif
+            if w.saturating_mul(h) <= AVIF_MAX_PIXELS
+                && AvifEncoder::new_with_speed_quality(&mut out, 8, 80).write_image(&rgba, w, h, image::ExtendedColorType::Rgba8).is_ok() =>
+        {
+            return (out, "avif");
+        }
+        _ => {}
     }
-    // A fast PNG loses to JPEG even on UI screenshots, so Auto compares against a compact one.
-    let png = encode_png_with(pixmap, scale, png::Compression::Balanced);
-    let fits = pixmap.width() < 65535 && pixmap.height() < 65535;
-    if fits && pixmap.pixels().iter().all(|p| p.alpha() == 255) {
-        let rgb: Vec<u8> = pixmap.data().chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
-        let mut jpeg = Vec::new();
-        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 92);
-        encoder.set_pixel_density(image::codecs::jpeg::PixelDensity::dpi((72. * scale).round() as u16));
-        if encoder.encode(&rgb, pixmap.width(), pixmap.height(), image::ExtendedColorType::Rgb8).is_ok() && jpeg.len() < png.len() {
-            return (jpeg, "jpeg");
+    if !opaque {
+        return (png_bytes(w, h, &rgba, png::ColorType::Rgba, scale, png::Compression::Balanced), "png");
+    }
+    let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+    // A fast PNG is twice the size, and loses to JPEG even on UI screenshots.
+    let png = png_bytes(w, h, &rgb, png::ColorType::Rgb, scale, png::Compression::Balanced);
+    if format == SaveFormat::Auto && w < 65535 && h < 65535 {
+        let mut out = Vec::new();
+        let mut encoder = jpeg::JpegEncoder::new_with_quality(&mut out, 92);
+        encoder.set_pixel_density(jpeg::PixelDensity::dpi((72. * scale).round() as u16));
+        if encoder.encode(&rgb, w, h, image::ExtendedColorType::Rgb8).is_ok() && out.len() < png.len() {
+            return (out, "jpeg");
         }
     }
     (png, "png")
 }
 
-/// Saves an unedited capture, returning the path: Auto may change its extension.
-pub fn save_capture(image: &TiledImage, scale: f32, png: Vec<u8>, path: PathBuf, auto: bool) -> std::io::Result<PathBuf> {
-    let (bytes, ext) = match auto.then(|| bgra_pixmap(image.width, image.height, image.read(image.full()))).flatten() {
-        Some(pixmap) => for_save(&pixmap, scale, true),
-        None => (png, "png"),
-    };
+/// Saves an unedited capture, returning the path: the format sets its extension.
+pub fn save_capture(image: &TiledImage, scale: f32, path: PathBuf, format: SaveFormat) -> std::io::Result<PathBuf> {
+    let pixmap = bgra_pixmap(image.width, image.height, image.read(image.full())).ok_or(std::io::ErrorKind::InvalidInput)?;
+    let (bytes, ext) = for_save(&pixmap, scale, format);
     let path = path.with_extension(ext);
     std::fs::write(&path, bytes)?;
     crate::mac::mark_screenshot(&path);
@@ -398,10 +435,32 @@ mod tests {
 
     #[test]
     fn auto_save_picks_the_smaller_format() {
-        let ext = |p: &Pixmap, auto| for_save(p, 2., auto).1;
-        assert_eq!(ext(&pixmap(255, true), true), "jpeg");
-        assert_eq!(ext(&pixmap(255, true), false), "png");
-        assert_eq!(ext(&pixmap(255, false), true), "png");
-        assert_eq!(ext(&pixmap(128, true), true), "png");
+        let ext = |p: &Pixmap, format| for_save(p, 2., format).1;
+        assert_eq!(ext(&pixmap(255, true), SaveFormat::Auto), "jpeg");
+        assert_eq!(ext(&pixmap(255, true), SaveFormat::Png), "png");
+        assert_eq!(ext(&pixmap(255, false), SaveFormat::Auto), "png");
+        assert_eq!(ext(&pixmap(128, true), SaveFormat::Auto), "png");
+    }
+
+    #[test]
+    fn saved_files_decode_to_the_same_pixels() {
+        let same = |p: &Pixmap, format| {
+            let (bytes, _) = for_save(p, 2., format);
+            let (w, h, rgba, _) = decode_rgba(&bytes).unwrap();
+            (w, h, rgba) == (p.width(), p.height(), straight(p).0)
+        };
+        for alpha in [255, 128] {
+            assert!(same(&pixmap(alpha, true), SaveFormat::Png));
+            assert!(same(&pixmap(alpha, true), SaveFormat::WebP));
+        }
+    }
+
+    #[test]
+    fn each_format_writes_its_own_file() {
+        let avif = for_save(&pixmap(128, true), 2., SaveFormat::Avif);
+        assert_eq!((avif.1, &avif.0[4..12]), ("avif", &b"ftypavif"[..]));
+        assert_eq!(for_save(&pixmap(255, true), 2., SaveFormat::WebP).1, "webp");
+        let tall = Pixmap::new(1, 16384).unwrap();
+        assert_eq!(for_save(&tall, 1., SaveFormat::WebP).1, "png");
     }
 }

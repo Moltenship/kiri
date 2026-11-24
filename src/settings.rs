@@ -111,6 +111,16 @@ pub enum CmdQ {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum SaveFormat {
+    /// A JPEG when that is smaller than the PNG.
+    Auto,
+    Png,
+    /// Lossless.
+    WebP,
+    Avif,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Appearance {
     System,
     Light,
@@ -219,7 +229,7 @@ pub fn timestamp_path(dir: &std::path::Path, template: &str) -> PathBuf {
     let mut taken = TAKEN.lock().unwrap_or_else(|e| e.into_inner());
     let path = (1..)
         .map(|n| dir.join(if n == 1 { format!("{stem}.png") } else { format!("{stem} {n}.png") }))
-        .find(|p| !taken.contains(p) && ["png", "jpg", "jpeg", "gif"].iter().all(|ext| !p.with_extension(ext).exists()))
+        .find(|p| !taken.contains(p) && ["png", "jpg", "jpeg", "gif", "webp", "avif"].iter().all(|ext| !p.with_extension(ext).exists()))
         .expect("an unused name");
     taken.push(path.clone());
     path
@@ -252,8 +262,7 @@ pub struct Settings {
     pub esc_copies: bool,
     pub esc_saves: bool,
     pub downscale_retina: bool,
-    /// Save writes a JPEG instead of a PNG when that is smaller.
-    pub save_auto_jpeg: bool,
+    pub save_format: SaveFormat,
     pub editor_on_top: bool,
     /// The editor opens with `last_tool` instead of Select.
     pub reopen_last_tool: bool,
@@ -302,7 +311,7 @@ impl Default for Settings {
             esc_copies: true,
             esc_saves: false,
             downscale_retina: false,
-            save_auto_jpeg: true,
+            save_format: SaveFormat::Auto,
             editor_on_top: false,
             reopen_last_tool: false,
             last_tool: Tool::Select,
@@ -393,6 +402,10 @@ pub fn load(cx: &mut App) {
             // Before the choice existed, freezing was the reason to want Kiri's selection.
             if settings.freeze_screen && !s.contains("\"area_selection\"") {
                 settings.area_selection = AreaSelection::Kiri;
+            }
+            // The format was a switch between Auto and PNG.
+            if s.contains("\"save_auto_jpeg\": false") && !s.contains("\"save_format\"") {
+                settings.save_format = SaveFormat::Png;
             }
             Some(settings)
         })

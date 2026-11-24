@@ -8,13 +8,16 @@ license = "MIT"
 futures = "0.3.34"
 global-hotkey = "0.9.0"
 gpui-kit = "0.9"
-image = { version = "0.25", default-features = false, features = ["jpeg", "gif"] }
+# WebP is here to open such files, and gpui builds it anyway; AVIF adds the rav1e encoder.
+image = { version = "0.25", default-features = false, features = ["jpeg", "gif", "webp", "avif"] }
 lyon_tessellation = "1"
 png = "0.18"
 raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny-skia = "0.12.0"
+# libwebp: its lossless files are a third smaller than those from image's own encoder.
+webp = { version = "0.3.1", default-features = false }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 tray-icon = "0.26.1"
